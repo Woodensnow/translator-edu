@@ -22,9 +22,9 @@ services:
       TRANSLATE_BACKEND: ctranslate2
       TRANSLATE_MODEL_DIR: /models/opus-mt-en-zh-ct2
       TRANSLATE_GLOSSARY_DIR: /glossary
-      TRANSLATE_INTRA_THREADS: "2"
-      TRANSLATE_INTER_THREADS: "1"
-      TRANSLATE_BEAM_SIZE: "1"
+      TRANSLATE_INTRA_THREADS: "${TRANSLATE_INTRA_THREADS:-2}"
+      TRANSLATE_INTER_THREADS: "${TRANSLATE_INTER_THREADS:-1}"
+      TRANSLATE_BEAM_SIZE: "${TRANSLATE_BEAM_SIZE:-1}"
     volumes:
       - ./models/opus-mt-en-zh-ct2:/models/opus-mt-en-zh-ct2:ro
       - ../../glossary:/glossary:ro
