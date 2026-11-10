@@ -33,6 +33,7 @@ import math
 import os
 import tempfile
 import threading
+import urllib.parse
 from typing import Any
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
@@ -140,7 +141,8 @@ def create_app(settings: Settings | None = None, engine: Any | None = None) -> F
     async def create_upload(request: Request) -> dict:
         """Store one recording on disk and return its duration. No PCM is kept."""
 
-        filename = request.headers.get("x-filename") or "lecture.bin"
+        filename = urllib.parse.unquote(request.headers.get("x-filename") or "lecture.bin", encoding="utf-8", errors="replace")
+        filename = os.path.basename(filename.replace("\\", "/")) or "lecture.bin"
         path = await _save_chunks(
             request.stream(),
             resolved.max_upload_bytes,

@@ -184,6 +184,26 @@ def test_two_live_sessions_do_not_reuse_segment_ids():
     assert ids[0].endswith("-seg-1") and ids[1].endswith("-seg-1")
 
 
+def test_percent_encoded_chinese_filename_is_accepted():
+    import urllib.parse
+
+    from asr.audio import wav_bytes_from_pcm16
+    from support import sine_pcm16
+
+    encoded = urllib.parse.quote("第3讲.wav", safe="")
+    encoded.encode("latin-1")
+    app = create_app(settings=_settings(max_audio_seconds=30), engine=FakeEngine())
+    wav = wav_bytes_from_pcm16(sine_pcm16(0.4))
+    with TestClient(app) as client:
+        created = client.post(
+            "/uploads",
+            content=wav,
+            headers={"content-type": "application/octet-stream", "x-filename": encoded},
+        )
+        assert created.status_code == 200
+        client.delete(f"/uploads/{created.json()['id']}")
+
+
 def test_batch_windows_keep_offsets_and_release_the_model_between_them():
     from asr.audio import wav_bytes_from_pcm16
     from support import sine_pcm16

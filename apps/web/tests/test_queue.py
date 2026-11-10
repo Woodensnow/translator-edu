@@ -10,9 +10,32 @@ import time
 import urllib.request
 from http.server import ThreadingHTTPServer
 
+from jobs import UploadQueue
 from server import QUEUE, Handler
 
 from test_proxy import _serve
+
+
+def test_finished_jobs_keep_only_the_latest():
+    paths = []
+    queue = UploadQueue(lambda job: None, ttl=3600, keep=1)
+    try:
+        ids = []
+        for _ in range(2):
+            handle = tempfile.NamedTemporaryFile(delete=False)
+            handle.write(b"x")
+            handle.close()
+            paths.append(handle.name)
+            ids.append(queue.submit(handle.name, "lecture.wav").id)
+        queue._queue.join()
+        assert queue.get(ids[0]) is None
+        assert queue.get(ids[1])["status"] == "done"
+    finally:
+        for path in paths:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
 
 
 def test_one_job_runs_at_a_time_and_segments_arrive_early(monkeypatch):
@@ -81,6 +104,11 @@ def test_one_job_runs_at_a_time_and_segments_arrive_early(monkeypatch):
         assert done["status"] == "done"
         assert len(done["segments"]) == 2
         assert started == ids
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/jobs/{ids[1]}?after=1", timeout=3) as response:
+            delta = json.loads(response.read().decode())
+        assert delta["next"] == 2
+        assert len(delta["segments"]) == 1
+        assert delta["segments"][0]["text"] == "second half"
     finally:
         release.set()
         QUEUE._runner = previous

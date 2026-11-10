@@ -10,6 +10,7 @@ import json
 import os
 import queue
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -35,15 +36,19 @@ class Job:
     max_seconds: int = 7200
     lock: threading.Lock = field(default_factory=threading.Lock)
 
-    def snapshot(self, position: int) -> dict:
+    finished_at: float = 0.0
+
+    def snapshot(self, position: int, after: int = 0) -> dict:
         with self.lock:
+            start = max(0, after)
             return {
                 "id": self.id,
                 "status": self.status,
                 "position": position,
                 "processed_seconds": self.processed_seconds,
                 "total_seconds": self.total_seconds,
-                "segments": list(self.segments),
+                "segments": list(self.segments[start:]),
+                "next": len(self.segments),
                 "error": self.error,
                 "code": self.code,
                 "max_seconds": self.max_seconds,
@@ -51,8 +56,10 @@ class Job:
 
 
 class UploadQueue:
-    def __init__(self, runner) -> None:
+    def __init__(self, runner, ttl: float = 3600.0, keep: int = 8) -> None:
         self._runner = runner
+        self._ttl = ttl
+        self._keep = keep
         self._jobs: dict[str, Job] = {}
         self._pending: list[str] = []
         self._lock = threading.Lock()
@@ -68,8 +75,9 @@ class UploadQueue:
         self._queue.put(job.id)
         return job
 
-    def get(self, job_id: str) -> dict | None:
+    def get(self, job_id: str, after: int = 0) -> dict | None:
         with self._lock:
+            self._evict_locked()
             job = self._jobs.get(job_id)
             if job is None:
                 return None
@@ -77,7 +85,22 @@ class UploadQueue:
                 position = self._pending.index(job_id)
             except ValueError:
                 position = 0
-        return job.snapshot(position)
+        return job.snapshot(position, after)
+
+    def _evict_locked(self) -> None:
+        now = time.time()
+        finished: list[Job] = []
+        for job_id, job in list(self._jobs.items()):
+            if job.status not in {"done", "error"}:
+                continue
+            if job.finished_at and now - job.finished_at > self._ttl:
+                self._jobs.pop(job_id, None)
+                continue
+            finished.append(job)
+        finished.sort(key=lambda item: item.finished_at)
+        while len(finished) > self._keep:
+            old = finished.pop(0)
+            self._jobs.pop(old.id, None)
 
     def _loop(self) -> None:
         while True:
@@ -87,6 +110,7 @@ class UploadQueue:
                     self._pending.remove(job_id)
                 job = self._jobs.get(job_id)
             if job is None:
+                self._queue.task_done()
                 continue
             with job.lock:
                 job.status = "running"
@@ -95,15 +119,21 @@ class UploadQueue:
                 with job.lock:
                     if job.status == "running":
                         job.status = "done"
+                    if job.status in {"done", "error"}:
+                        job.finished_at = time.time()
             except Exception as exc:
                 with job.lock:
                     job.status = "error"
                     job.error = job.error or str(exc) or "处理失败"
+                    job.finished_at = time.time()
             finally:
                 try:
                     os.unlink(job.path)
                 except OSError:
                     pass
+                with self._lock:
+                    self._evict_locked()
+                self._queue.task_done()
 
 
 def translate_batches(translate_url: str, segments: list[dict], glossary: str, timeout: float) -> list[dict]:
@@ -194,7 +224,7 @@ def run_upload(job: Job, path: str, asr_url: str, translate_url: str, glossary: 
         connection.putrequest("POST", "/uploads")
         connection.putheader("Content-Length", str(size))
         connection.putheader("Content-Type", "application/octet-stream")
-        connection.putheader("X-Filename", job.filename or "lecture.bin")
+        connection.putheader("X-Filename", urllib.parse.quote(job.filename or "lecture.bin", safe=""))
         connection.endheaders()
         with open(path, "rb") as handle:
             while True:

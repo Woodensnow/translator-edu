@@ -9,7 +9,7 @@ The translate HTTP API belongs to `services/translate`. Its request, response, s
 3. The browser posts those segments to the captions page. The page forwards them as `POST /translate` to `TRANSLATE_URL` (default `http://translate:8080`). It does not rename fields.
 4. The page reads `segments[].translation` and draws it next to the English line with the same `id`. Timestamps on the way back are the ones ASR sent.
 
-A recording upload uses `POST /transcribe` on the captions page, which forwards the file to ASR, then the same translate step.
+A recording upload is `POST /jobs` on the captions page. The page streams the file to disk and asks ASR for one window at a time (`POST /uploads`, then `POST /uploads/{id}/next`). Each window's segments go through the same `POST /translate` step, and the page polls `GET /jobs/{id}?after=<n>` for the new rows.
 
 Example body the page sends (the response shape, including `translation`, `segments[].translation`, `segments[].terms`, and statuses 422, 404, and 503, is in the translate README):
 

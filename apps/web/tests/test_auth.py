@@ -34,7 +34,19 @@ def test_production_refuses_to_start_without_a_token():
         assert "openssl rand -hex 32" in str(exc)
     else:
         raise AssertionError("expected SystemExit")
-    assert ensure_token({"WEB_ACCESS_TOKEN": "abc"}) == "abc"
+    try:
+        ensure_token({"WEB_REQUIRE_AUTH": "1", "WEB_ACCESS_TOKEN": "replace-with-openssl-rand-hex-32"})
+    except SystemExit as exc:
+        assert "placeholder" in str(exc)
+    else:
+        raise AssertionError("placeholder must be refused")
+    try:
+        ensure_token({"WEB_ACCESS_TOKEN": "short-token"})
+    except SystemExit as exc:
+        assert "32" in str(exc)
+    else:
+        raise AssertionError("short token must be refused")
+    assert ensure_token({"WEB_ACCESS_TOKEN": "a" * 32}) == "a" * 32
 
 
 def test_missing_and_wrong_token_are_401_and_right_token_sets_a_cookie(monkeypatch):
@@ -89,7 +101,10 @@ def test_lockout_after_repeated_wrong_tokens():
     for _ in range(4):
         assert guard.check("10.0.0.8", "wrong", TOKEN) == "bad"
     assert guard.check("10.0.0.8", "wrong", TOKEN) == "locked"
-    assert guard.check("10.0.0.8", TOKEN, TOKEN) == "locked"
+    assert guard.check("10.0.0.8", TOKEN, TOKEN) == "ok"
+    for _ in range(4):
+        assert guard.check("10.0.0.8", "wrong", TOKEN) == "bad"
+    assert guard.check("10.0.0.8", "wrong", TOKEN) == "locked"
     assert guard.retry_after("10.0.0.8") == 60
     clock["now"] = 61
     assert guard.check("10.0.0.8", "wrong", TOKEN) == "bad"
@@ -122,6 +137,11 @@ def test_http_lockout_returns_429(monkeypatch):
             statuses.append(response.status)
         assert statuses[:4] == [401, 401, 401, 401]
         assert statuses[4:] == [429, 429]
+        still = _conn(port)
+        still.request("GET", "/config.json", headers={"Cookie": f"web_access={TOKEN}"})
+        opened = still.getresponse()
+        opened.read()
+        assert opened.status == 200
     finally:
         web.shutdown()
         GUARD.reset()

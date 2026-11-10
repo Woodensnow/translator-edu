@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -26,3 +29,29 @@ jobs:
 
       - name: Web tests
         run: node --test apps/web/tests/*.test.js
+
+      - name: Build images without model weights
+        run: |
+          docker build -t translator-edu-web:ci apps/web
+          docker build -t translator-edu-asr:ci services/asr
+          docker build -f services/translate/Dockerfile -t translator-edu-translate:ci .
+
+      - name: Smoke the web image
+        run: |
+          trap 'docker rm -f web-smoke >/dev/null 2>&1 || true' EXIT
+          docker run --rm translator-edu-web:ci python -c "import server, auth, jobs; print('import ok')"
+          set +e
+          docker run --rm -e WEB_REQUIRE_AUTH=1 -e WEB_ACCESS_TOKEN=replace-with-openssl-rand-hex-32 \
+            translator-edu-web:ci python -c "import os; from auth import ensure_token; ensure_token(dict(os.environ))"
+          status=$?
+          set -e
+          test "$status" -ne 0
+          token="$(openssl rand -hex 32)"
+          docker rm -f web-smoke >/dev/null 2>&1 || true
+          docker run --rm -d --name web-smoke -p 127.0.0.1:18080:8080 \
+            -e WEB_REQUIRE_AUTH=1 -e WEB_ACCESS_TOKEN="$token" translator-edu-web:ci
+          for _ in 1 2 3 4 5 6 7 8 9 10; do
+            curl -sf http://127.0.0.1:18080/health && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:18080/health

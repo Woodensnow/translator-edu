@@ -159,7 +159,8 @@ export function toBilingualSrt(segments) {
     .map((segment, index) => {
       const start = srtTime(segment.start || 0);
       const end = srtTime(segment.end || segment.start || 0);
-      return `${index + 1}\n${start} --> ${end}\n${segment.text}\n${segment.translation || ""}`;
+      const lines = [segment.text, segment.translation].filter((line) => String(line || "").trim());
+      return `${index + 1}\n${start} --> ${end}\n${lines.join("\n")}`;
     })
     .join("\n\n");
 }

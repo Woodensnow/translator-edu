@@ -32,7 +32,6 @@ let config = {
   course: "deep-learning",
   courseTitle: "Deep Learning",
   asrWsPath: "/ws/transcribe",
-  transcribePath: "/transcribe",
   translatePath: "/translate",
 };
 let live = null;
@@ -292,9 +291,16 @@ async function uploadBlob(blob, filename) {
   setStatus("排队中…", "idle");
   hideBanner();
   hideDownloads();
-  const form = new FormData();
-  form.append("file", blob, filename || "lecture.webm");
-  const response = await fetch("/jobs", { method: "POST", body: form, credentials: "same-origin" });
+  const name = filename || "lecture.webm";
+  const response = await fetch("/jobs", {
+    method: "POST",
+    body: blob,
+    credentials: "same-origin",
+    headers: {
+      "Content-Type": "application/octet-stream",
+      "X-Filename": encodeURIComponent(name),
+    },
+  });
   if (response.status === 401) {
     window.location.href = "/login";
     return;
@@ -307,10 +313,16 @@ async function uploadBlob(blob, filename) {
 }
 
 async function pollJob(id) {
+  let cursor = 0;
+  const seen = [];
   for (;;) {
-    const response = await fetch(`/jobs/${id}`, { credentials: "same-origin" });
+    const response = await fetch(`/jobs/${id}?after=${cursor}`, { credentials: "same-origin" });
     if (response.status === 401) {
       window.location.href = "/login";
+      return;
+    }
+    if (!response.ok) {
+      setStatus(`任务查询失败（${response.status}）`, "warn");
       return;
     }
     const job = await response.json();
@@ -319,7 +331,9 @@ async function pollJob(id) {
       setStatus("录音太长", "warn");
       return;
     }
-    state = showJobSegments(state, job.segments || []);
+    seen.push(...(job.segments || []));
+    cursor = Number.isInteger(job.next) ? job.next : seen.length;
+    state = showJobSegments(state, seen);
     render();
     if (els.progress && job.total_seconds) {
       els.progress.hidden = false;
@@ -329,14 +343,14 @@ async function pollJob(id) {
     if (job.status === "running") setStatus("正在转写…", "live");
     if (job.status === "done") {
       setStatus("Recording transcribed", "idle");
-      showDownloads(state.segments);
+      showDownloads(seen);
       return;
     }
     if (job.status === "error") {
       setStatus(job.error || "处理失败", "warn");
       return;
     }
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise((resolve) => setTimeout(resolve, 2000));
   }
 }
 

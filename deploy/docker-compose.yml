@@ -65,8 +65,8 @@ services:
       - ../glossary:/glossary:ro
     ports:
       - "${TRANSLATE_PUBLISH:-127.0.0.1:8081}:8080"
-    cpus: "0.4"
-    mem_limit: 640m
+    cpus: "${TRANSLATE_CPUS:-1}"
+    mem_limit: ${TRANSLATE_MEM_LIMIT:-640m}
     healthcheck:
       test:
         [

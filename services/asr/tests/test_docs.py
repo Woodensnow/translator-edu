@@ -42,6 +42,8 @@ def test_deploy_keeps_asr_and_translate_off_the_public_internet():
     assert "TRANSLATE_GLOSSARY_DIR: /glossary" in compose
     assert "http://translate:8080" in compose
     assert "TRANSLATE_INTRA_THREADS:-1" in compose.replace("}", "")
+    assert "TRANSLATE_CPUS:-1" in compose.replace("}", "")
+    assert "TRANSLATE_MEM_LIMIT:-640m" in compose.replace("}", "")
     assert "WEB_ACCESS_TOKEN:?" in compose.replace("}", "") or "WEB_ACCESS_TOKEN:" in compose
     assert "one 2-vCPU" in docs or "One Alibaba" in docs
     assert "swapfile" in docs

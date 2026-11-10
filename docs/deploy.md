@@ -27,7 +27,7 @@ The microphone needs a secure context, so live captions are not the default path
 
 An upload is saved to disk, then transcribed in about 45-second windows. Each window is translated before the next window starts, so the two models take turns on the two cores. The page polls and draws bilingual rows as windows finish (`已处理 12/90 分钟`). When the job is done it offers a bilingual `.txt` and `.srt`. A second upload waits in the queue.
 
-`ASR_CPU_THREADS` defaults to 2 and translate uses one intra thread. They do not run those pools on the same chunk. See the measured section for why 2 remains the ASR default.
+`ASR_CPU_THREADS` defaults to 2. Translate defaults to `cpus: 1` (`TRANSLATE_CPUS`) and `mem_limit: 640m` (`TRANSLATE_MEM_LIMIT`). An empty or unset value uses those defaults. The two models take turns on a chunk, so those pools are not stacked. See the measured section for why 2 remains the ASR default. Anna's real-model run peaked around 227 MiB, so 640 MB leaves headroom for the runtime.
 
 A recording longer than `ASR_MAX_AUDIO_SECONDS` (default 7200, two hours) is rejected. The page says `录音太长，请分段上传` and shows the limit. It is not cut down and returned as a short success.
 
@@ -49,7 +49,7 @@ Plan for about 2 GB of RAM.
 | Container | mem_limit | Why |
 | --- | --- | --- |
 | asr | 768 MB | `base.en` int8 resident is about 400 MB. A window of audio is a few MB, not the whole lecture. |
-| translate | 640 MB | opus-mt int8 is about 0.5 GB. One intra thread. |
+| translate | 640 MB | One CPU, matching one translate thread. Anna measured the real int8 model at about 185 MiB idle and 227 MiB peak, with one thread averaging 93 ms per sentence (p95 291 ms). 640 MB stays above that peak. |
 | web | 128 MB | Proxy, queue, and static files. |
 
 The sum is 1536 MB, under 1.6 GB, so the OS still has a little room. An overrun hits that container's limit instead of the whole machine. If the box is tight, set `ASR_MODEL=tiny.en` (about 300 MB). A two-hour file decoded as float32 16 kHz mono would be about 460 MB if it were held at once. Uploads are streamed to a temp file and decoded one window at a time. The temp file is deleted when the job ends.
@@ -68,14 +68,14 @@ echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 
 Real-time factor is model time divided by audio length. Lower than 1 means the window finishes before the next window of speech would. Numbers below are filled in after a run pinned with `taskset -c 0,1` on this VM (Intel Xeon, 2400 MHz).
 
-Both processes were pinned with `taskset -c 0,1` on this VM (Intel Xeon, 2400 MHz). The recording is the public 11-second English clip repeated to 10 minutes (14 windows of 45 seconds). After each window the client called the translate service, which is how the upload queue alternates the two models. Translate ran as the mock backend (real opus-mt weights were not converted here), so its RSS is the process, not the 0.5 GB int8 model. Add that 0.5 GB when sizing the box.
+Both processes were pinned with `taskset -c 0,1` on this VM (Intel Xeon, 2400 MHz). The recording is the public 11-second English clip repeated to 10 minutes (14 windows of 45 seconds). After each window the client called the translate service, which is how the upload queue alternates the two models. Translate ran as the mock backend, so the RSS column is the process without opus-mt weights. Anna later measured the real int8 model at about 185 MiB idle and 227 MiB peak, which is what the 640 MB limit is sized for.
 
 | ASR threads | ASR time | ASR RTF | ASR peak RSS | Translate peak RSS | Combined peak RSS |
 | --- | --- | --- | --- | --- | --- |
 | 1 | 32.1 s | 0.054 | 477 MB | 43 MB mock | 520 MB |
 | 2 | 21.4 s | 0.036 | 476 MB | 43 MB mock | 519 MB |
 
-`ASR_CPU_THREADS=2` is the default. It is about 1.5× faster than one thread, and the RSS does not move. Translate's one intra thread runs between windows, not during them, so the second ASR thread is not stacked on top of a translate thread for the same chunk. With real weights, plan on about 1.0 GB resident (ASR ~0.5 GB plus translate ~0.5 GB) before the OS and a decoded window. That fits a 2 GB instance with the swapfile above. RTF 0.036 is not poor. Use `tiny.en` when the 768 MB ASR limit is too tight, not because this CPU cannot keep up.
+`ASR_CPU_THREADS=2` is the default. It is about 1.5× faster than one thread, and the RSS stays the same. Translate's one intra thread runs after the window, so the second ASR thread and the translate thread take turns. With Anna's 227 MiB translate peak, plan on about 700 MB resident before the OS and a decoded window. That fits a 2 GB instance with the swapfile above. RTF 0.036 keeps up with a recording. Use `tiny.en` when the 768 MB ASR limit is too tight for the box.
 
 An earlier solo run of the 11-second and 33-second clips, also pinned to two cores, was RTF 0.042 and 0.029 for `base.en` and 0.031 and 0.016 for `tiny.en`.
 

@@ -29,6 +29,7 @@ from auth import (
     ensure_token,
     presented_token,
     set_cookie_header,
+    tokens_equal,
 )
 from jobs import Job
 
@@ -293,7 +294,12 @@ class Handler(BaseHTTPRequestHandler):
             if not self._allow_api():
                 return
             job_id = path.removeprefix("/jobs/")
-            snapshot = QUEUE.get(job_id)
+            query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            try:
+                after = int((query.get("after") or ["0"])[0])
+            except ValueError:
+                after = 0
+            snapshot = QUEUE.get(job_id, after=max(0, after))
             if snapshot is None:
                 self._send_bytes(404, b'{"detail":"Job was not found."}', "application/json")
                 return
@@ -321,33 +327,17 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self._proxy_post(translate_upstream(), TRANSLATE_MAX_BODY, translate_timeout())
             return
-        if path == "/transcribe":
-            if not self._allow_api():
-                return
-            timeout = float(os.environ.get("ASR_UPLOAD_TIMEOUT_SECONDS", "600"))
-            self._proxy_post(transcribe_upstream() + "/transcribe", TRANSCRIBE_MAX_BODY, timeout)
-            return
         self.send_error(404)
 
-    def _token_state(self) -> str:
+    def _allow_api(self) -> bool:
+        """API calls are never locked out. A valid cookie still works."""
+
         expected = configured_token()
         if not expected:
-            return "open"
-        return GUARD.check(self.client_address[0], presented_token(self.headers), expected)
-
-    def _allow_api(self) -> bool:
-        state = self._token_state()
-        if state in {"open", "ok"}:
             return True
-        if state == "locked":
-            retry = GUARD.retry_after(self.client_address[0])
-            self._send_bytes(
-                429,
-                b'{"detail":"too many attempts"}',
-                "application/json",
-                extra=[f"Retry-After: {retry}"],
-            )
-            return False
+        presented = presented_token(self.headers)
+        if presented and tokens_equal(presented, expected):
+            return True
         self._send_bytes(401, b'{"detail":"unauthorized"}', "application/json")
         return False
 
@@ -405,9 +395,9 @@ class Handler(BaseHTTPRequestHandler):
                 pass
             self._send_bytes(400, b'{"detail":"Upload ended early."}', "application/json")
             return
-        filename = _filename_from_multipart(self.headers.get("Content-Type"), path) or "lecture.bin"
+        filename = _filename_header(self.headers.get("X-Filename"))
         job = QUEUE.submit(path, filename)
-        body = json.dumps(job.snapshot(max(0, len(QUEUE._pending) - 1))).encode()
+        body = json.dumps(QUEUE.get(job.id) or {}).encode()
         self._send_bytes(202, body, "application/json")
 
     def _proxy_post(self, url: str, limit: int, timeout: float) -> None:
@@ -447,38 +437,14 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
-def _filename_from_multipart(content_type: str | None, path: str) -> str:
-    if not content_type or "multipart/form-data" not in content_type.lower():
+def _filename_header(raw: str | None) -> str:
+    """Decode an RFC 3986 percent-encoded X-Filename. The header itself is ASCII."""
+
+    name = urllib.parse.unquote((raw or "").strip(), encoding="utf-8", errors="replace")
+    name = Path(name).name
+    if not name or name in {".", ".."}:
         return "lecture.bin"
-    marker = "boundary="
-    if marker not in content_type:
-        return "lecture.bin"
-    boundary = content_type.split(marker, 1)[1].strip().strip('"')
-    if not boundary:
-        return "lecture.bin"
-    # The queued file is the raw multipart body. Pull the filename out and
-    # rewrite the temp file to the file part only so ASR sees audio bytes.
-    try:
-        raw = Path(path).read_bytes()
-    except OSError:
-        return "lecture.bin"
-    fence = ("--" + boundary).encode()
-    filename = "lecture.bin"
-    for part in raw.split(fence):
-        if b"Content-Disposition" not in part or b'name="file"' not in part:
-            continue
-        header, _, data = part.partition(b"\r\n\r\n")
-        if not data:
-            continue
-        text = header.decode("utf-8", errors="replace")
-        if "filename=" in text:
-            filename = text.split("filename=", 1)[1].split("\r\n", 1)[0].strip().strip('"')
-        payload = data[:-2] if data.endswith(b"\r\n") else data
-        if payload.endswith(b"--"):
-            payload = payload[:-2]
-        Path(path).write_bytes(payload)
-        return filename or "lecture.bin"
-    return filename
+    return name
 
 
 def _mime(path: Path) -> str:

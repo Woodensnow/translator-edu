@@ -1,9 +1,7 @@
 FROM python:3.11-slim
 
 WORKDIR /app
-COPY index.html server.py ./
-COPY css ./css
-COPY js ./js
+COPY . .
 
 ENV WEB_HOST=0.0.0.0 \
     WEB_PORT=8080 \
