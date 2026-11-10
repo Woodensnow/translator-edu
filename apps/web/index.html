@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lecture captions · translator-edu</title>
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+  <div class="app">
+    <header class="top">
+      <div class="brand">
+        <p class="eyebrow">translator-edu</p>
+        <h1 id="course-title">Lecture captions</h1>
+      </div>
+      <p id="status" class="status is-idle" role="status">Loading…</p>
+    </header>
+    <section class="controls" aria-label="Lecture controls">
+      <button type="button" id="live-btn">Start live captions</button>
+      <button type="button" id="stop-btn" disabled>Stop</button>
+      <label class="upload">
+        Upload a recording
+        <input id="file" type="file" accept="audio/*,.wav,.mp3,.m4a,.webm,.ogg,.flac">
+      </label>
+    </section>
+    <p id="banner" class="banner" hidden></p>
+    <div class="legend" aria-hidden="true">
+      <span></span>
+      <span>English</span>
+      <span>中文</span>
+    </div>
+    <main id="captions" class="captions" aria-live="polite"></main>
+    <footer>
+      <p>English is transcribed on this machine. Chinese comes from the translation service. A few seconds of delay is normal. If live captions fall behind, the recording is transcribed when you stop.</p>
+    </footer>
+  </div>
+  <noscript><p>JavaScript is required for captions.</p></noscript>
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

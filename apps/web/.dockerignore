@@ -1,0 +1,7 @@
+tests
+**/__pycache__
+**/.pytest_cache
+**/*.wav
+**/*.mp3
+**/*.m4a
+**/*.webm

@@ -1,0 +1,100 @@
+# Classroom stack for two 2-vCPU Alibaba Cloud ECS instances, no GPU.
+#
+# Only the captions page is published. ASR and translate have no auth.
+# Translate also sends Access-Control-Allow-Origin: *. They stay on the
+# compose network. A debug curl from the ECS host can use the loopback
+# publishes below. Do not change those to 0.0.0.0.
+#
+#   docker compose up -d --build
+#
+# Transcription host only:  docker compose up -d --build asr web
+# Translation host only:    TRANSLATE_PUBLISH=<private-ip>:8080 docker compose up -d --build translate
+# Then set the web host's TRANSLATE_URL to http://<private-ip>:8080.
+# The security group opens the web port only. See docs/deploy.md.
+
+name: translator-edu
+
+services:
+  asr:
+    build:
+      context: ../services/asr
+    image: translator-edu-asr:cpu
+    environment:
+      ASR_MODEL: ${ASR_MODEL:-base.en}
+      ASR_COMPUTE_TYPE: ${ASR_COMPUTE_TYPE:-int8}
+      ASR_CPU_THREADS: ${ASR_CPU_THREADS:-2}
+      ASR_MODEL_DIR: /models
+      ASR_GLOSSARY_PATH: /glossary/deep-learning.csv
+      ASR_WINDOW_SECONDS: ${ASR_WINDOW_SECONDS:-4}
+      ASR_PARTIAL_SECONDS: ${ASR_PARTIAL_SECONDS:-0}
+      ASR_CORS_ORIGINS: ${ASR_CORS_ORIGINS:-*}
+      ASR_PORT: "8001"
+    volumes:
+      - asr-models:/models
+      - ../glossary:/glossary:ro
+    ports:
+      - "${ASR_PUBLISH:-127.0.0.1:8001}:8001"
+    cpus: "2"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 180s
+    restart: unless-stopped
+
+  translate:
+    build:
+      context: ..
+      dockerfile: services/translate/Dockerfile
+    image: translator-edu-translate:cpu
+    environment:
+      TRANSLATE_BACKEND: ${TRANSLATE_BACKEND:-ctranslate2}
+      TRANSLATE_MODEL_DIR: /models/opus-mt-en-zh-ct2
+      TRANSLATE_GLOSSARY_DIR: /glossary
+      TRANSLATE_INTRA_THREADS: "2"
+      TRANSLATE_INTER_THREADS: "1"
+      TRANSLATE_BEAM_SIZE: "1"
+    volumes:
+      - ../services/translate/models/opus-mt-en-zh-ct2:/models/opus-mt-en-zh-ct2:ro
+      - ../glossary:/glossary:ro
+    ports:
+      - "${TRANSLATE_PUBLISH:-127.0.0.1:8081}:8080"
+    cpus: "2"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ../apps/web
+    image: translator-edu-web:cpu
+    environment:
+      WEB_PORT: "8080"
+      ASR_WS_URL: ${ASR_WS_URL:-ws://asr:8001/ws/transcribe}
+      ASR_HTTP_URL: ${ASR_HTTP_URL:-http://asr:8001}
+      TRANSLATE_URL: ${TRANSLATE_URL:-http://translate:8080}
+      COURSE_ID: ${COURSE_ID:-deep-learning}
+      COURSE_TITLE: ${COURSE_TITLE:-Deep Learning}
+    ports:
+      - "${WEB_PUBLISH:-0.0.0.0:8080}:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  asr-models:
