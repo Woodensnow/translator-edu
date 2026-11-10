@@ -37,3 +37,7 @@ models/
 
 # Local environment
 .env
+
+# Host bind-mount for saved caption results (deploy/data). The compose default
+# is the named volume web-results; this path is for the alternative mount.
+deploy/data/

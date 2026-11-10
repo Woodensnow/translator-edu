@@ -146,3 +146,45 @@ def test_http_lockout_returns_429(monkeypatch):
         web.shutdown()
         GUARD.reset()
         GUARD.limit = 5
+
+
+def test_wrong_api_token_is_rate_limited_and_a_valid_token_is_not(monkeypatch):
+    monkeypatch.setenv("WEB_ACCESS_TOKEN", TOKEN)
+    GUARD.reset()
+    web = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    _serve(web)
+    port = web.server_address[1]
+    try:
+        quiet = []
+        for _ in range(8):
+            connection = _conn(port)
+            connection.request("GET", "/config.json")
+            response = connection.getresponse()
+            response.read()
+            quiet.append(response.status)
+        assert quiet == [401] * 8
+
+        statuses = []
+        for _ in range(6):
+            connection = _conn(port)
+            connection.request("GET", "/results", headers={"X-Access-Token": "wrong-token"})
+            response = connection.getresponse()
+            response.read()
+            statuses.append(response.status)
+        assert statuses[:4] == [401, 401, 401, 401]
+        assert statuses[4:] == [429, 429]
+
+        allowed = _conn(port)
+        allowed.request("GET", "/config.json", headers={"X-Access-Token": TOKEN})
+        opened = allowed.getresponse()
+        opened.read()
+        assert opened.status == 200
+
+        again = _conn(port)
+        again.request("GET", "/results", headers={"X-Access-Token": "wrong-token"})
+        follow = again.getresponse()
+        follow.read()
+        assert follow.status == 401
+    finally:
+        web.shutdown()
+        GUARD.reset()

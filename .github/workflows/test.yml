@@ -22,9 +22,12 @@ jobs:
           node-version: "22"
 
       - name: Install test dependencies
-        run: pip install -r services/asr/requirements-ci.txt
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          pip install -r services/asr/requirements-ci.txt
 
-      - name: Python tests
+      - name: Python tests, including the uvicorn WebSocket handshake
         run: python -m pytest
 
       - name: Web tests
@@ -55,3 +58,76 @@ jobs:
             sleep 1
           done
           curl -sf http://127.0.0.1:18080/health
+          docker run --rm --entrypoint python translator-edu-web:ci -c "import os; assert os.geteuid() != 0"
+          docker run --rm --entrypoint python translator-edu-asr:ci -c "import os, websockets; assert os.geteuid() != 0"
+
+      - name: Results survive a web container restart
+        run: |
+          token="$(openssl rand -hex 32)"
+          dir="$(mktemp -d)"
+          chmod 777 "$dir"
+          trap 'docker rm -f web-results >/dev/null 2>&1 || true; rm -rf "$dir"' EXIT
+          docker run -d --name web-results -p 127.0.0.1:18081:8080 \
+            -e WEB_REQUIRE_AUTH=1 -e WEB_ACCESS_TOKEN="$token" \
+            -e RESULT_DIR=/data/results -e RESULT_RETENTION_DAYS=7 \
+            -v "$dir:/data/results" translator-edu-web:ci
+          for _ in 1 2 3 4 5 6 7 8 9 10; do
+            curl -sf http://127.0.0.1:18081/health && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:18081/health
+          docker exec -i web-results python - <<'PY'
+          from jobs import Job
+          from results import ResultStore
+          job = Job(id="abc123abc123", path="", filename="第3讲.wav")
+          job.status = "done"
+          job.total_seconds = 95
+          job.finished_at = __import__("time").time()
+          job.segments = [{"id": "s1", "start": 1.5, "end": 4, "text": "Hello", "translation": "你好", "fallback": False, "terms": []}]
+          ResultStore("/data/results", retention_days=7).save_job(job)
+          PY
+          docker restart web-results
+          for _ in 1 2 3 4 5 6 7 8 9 10; do
+            curl -sf http://127.0.0.1:18081/health && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:18081/health
+          body="$(curl -sf -H "X-Access-Token: $token" http://127.0.0.1:18081/results/abc123abc123)"
+          printf '%s\n' "$body" | grep -q '你好'
+          curl -sf -H "X-Access-Token: $token" http://127.0.0.1:18081/results | grep -q '第3讲'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18081/results)" = "401"
+          test "$(curl -s -o /dev/null -w '%{http_code}' -H "X-Access-Token: $token" http://127.0.0.1:18081/results/..%2f..%2fetc%2fpasswd)" = "400"
+
+      - name: ASR image accepts a WebSocket handshake
+        run: |
+          trap 'docker rm -f asr-ws >/dev/null 2>&1 || true' EXIT
+          docker run -d --name asr-ws -p 127.0.0.1:18082:8001 translator-edu-asr:ci
+          for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+            curl -sf http://127.0.0.1:18082/health && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:18082/health
+          python - <<'PY'
+          import socket
+          sock = socket.create_connection(("127.0.0.1", 18082), timeout=5)
+          sock.sendall(
+              b"GET /ws/transcribe HTTP/1.1\r\n"
+              b"Host: 127.0.0.1:18082\r\n"
+              b"Upgrade: websocket\r\n"
+              b"Connection: Upgrade\r\n"
+              b"Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+              b"Sec-WebSocket-Version: 13\r\n\r\n"
+          )
+          data = b""
+          sock.settimeout(5)
+          while b"\r\n\r\n" not in data:
+              chunk = sock.recv(4096)
+              if not chunk:
+                  break
+              data += chunk
+          sock.close()
+          head = data.split(b"\r\n", 1)[0]
+          print(head.decode("ascii", "replace"))
+          if b" 101 " not in head:
+              raise SystemExit(data[:500])
+          PY

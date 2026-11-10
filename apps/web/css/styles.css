@@ -125,6 +125,56 @@ button:focus-visible, .upload:focus-within { outline: 2px solid var(--amber); ou
   border-radius: 12px;
 }
 
+.history { margin-top: 1.2rem; }
+.history h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 560;
+  color: #d7e0d8;
+}
+.history-note {
+  margin: 0.25rem 0 0.55rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.history ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  max-height: 16rem;
+  overflow: auto;
+}
+.history li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.7rem;
+  align-items: center;
+  border: 1px solid #3d4a43;
+  border-radius: 12px;
+  padding: 0.45rem 0.7rem;
+}
+.history-name { font-family: var(--zh-font); }
+.history-meta, .history-empty {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.history button, .history a {
+  font: inherit;
+  font-size: 0.82rem;
+  background: transparent;
+  color: #f2d48a;
+  border: 1px solid #6d7a72;
+  border-radius: 999px;
+  padding: 0.2rem 0.7rem;
+  text-decoration: none;
+  cursor: pointer;
+}
+.history button.danger { color: #f0b8a4; border-color: #8d2f24; }
+
 .legend {
   display: grid;
   grid-template-columns: 4.5rem 1fr 1fr;

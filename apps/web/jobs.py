@@ -17,6 +17,8 @@ import urllib.request
 import uuid
 from dataclasses import dataclass, field
 
+from results import snapshot_payload
+
 
 BATCH_SEGMENTS = 4
 BATCH_CHARS = 1500
@@ -56,10 +58,11 @@ class Job:
 
 
 class UploadQueue:
-    def __init__(self, runner, ttl: float = 3600.0, keep: int = 8) -> None:
+    def __init__(self, runner, ttl: float = 3600.0, keep: int = 8, store=None) -> None:
         self._runner = runner
         self._ttl = ttl
         self._keep = keep
+        self._store = store
         self._jobs: dict[str, Job] = {}
         self._pending: list[str] = []
         self._lock = threading.Lock()
@@ -86,6 +89,15 @@ class UploadQueue:
             except ValueError:
                 position = 0
         return job.snapshot(position, after)
+
+    def forget_finished(self, job_id: str) -> None:
+        """Drop a finished job from memory after its file was deleted."""
+
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None or job.status not in {"done", "error"}:
+                return
+            self._jobs.pop(job_id, None)
 
     def _evict_locked(self) -> None:
         now = time.time()
@@ -116,11 +128,7 @@ class UploadQueue:
                 job.status = "running"
             try:
                 self._runner(job)
-                with job.lock:
-                    if job.status == "running":
-                        job.status = "done"
-                    if job.status in {"done", "error"}:
-                        job.finished_at = time.time()
+                self._finish(job)
             except Exception as exc:
                 with job.lock:
                     job.status = "error"
@@ -134,6 +142,37 @@ class UploadQueue:
                 with self._lock:
                     self._evict_locked()
                 self._queue.task_done()
+
+    def _finish(self, job: Job) -> None:
+        """Persist a completed job before the page can observe ``done``.
+
+        The audio file is removed by the caller. Only a successful job is written.
+        """
+
+        with job.lock:
+            if job.status == "running":
+                job.finished_at = time.time()
+                payload = snapshot_payload(job)
+                publish = True
+            elif job.status == "done":
+                if not job.finished_at:
+                    job.finished_at = time.time()
+                payload = snapshot_payload(job)
+                publish = False
+            else:
+                if not job.finished_at:
+                    job.finished_at = time.time()
+                payload = None
+                publish = False
+        if payload is not None and self._store is not None:
+            try:
+                self._store.write_payload(payload)
+            except OSError as exc:
+                print(f"could not save result {job.id}: {exc}", flush=True)
+        if publish:
+            with job.lock:
+                if job.status == "running":
+                    job.status = "done"
 
 
 def translate_batches(translate_url: str, segments: list[dict], glossary: str, timeout: float) -> list[dict]:

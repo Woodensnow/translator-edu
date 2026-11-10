@@ -10,6 +10,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src ./src
 COPY scripts ./scripts
 
+# uid 10001 owns /models. Glossary mounts stay read-only and world-readable.
+RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin asr \
+    && mkdir -p /models/hf \
+    && chown -R asr:asr /models
+
 ENV PYTHONPATH=/app/src \
     PYTHONUNBUFFERED=1 \
     ASR_MODEL=base.en \
@@ -24,6 +29,7 @@ ENV PYTHONPATH=/app/src \
     HF_HOME=/models/hf \
     HUGGINGFACE_HUB_CACHE=/models/hf
 
+USER asr
 EXPOSE 8001
 VOLUME ["/models"]
 

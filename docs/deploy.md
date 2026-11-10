@@ -13,6 +13,12 @@ Compose reads `deploy/.env` because that file is passed with `--env-file` and be
 
 Unset and empty thread variables resolve to the single-host defaults (`ASR_CPU_THREADS` 2, `TRANSLATE_INTRA_THREADS` 1, `TRANSLATE_INTER_THREADS` 1). Unset and empty `WEB_ACCESS_TOKEN` both fail `docker compose config` instead of booting with a blank password.
 
+`docker compose config` still passes if the token is the `.env.example` placeholder or shorter than 32 characters. The web process exits, and `restart: unless-stopped` starts it again. The same log line is where a result-directory permission error shows up. Read it with:
+
+```bash
+docker compose -f deploy/docker-compose.yml logs web
+```
+
 ## What is reachable
 
 Only the captions page is on the public interface (`WEB_PUBLISH`, default `0.0.0.0:8080`). ASR is `127.0.0.1:8001` and translate is `127.0.0.1:8081`, for a curl from the ECS host. The browser never calls them. The page proxies, and it asks for `WEB_ACCESS_TOKEN` once. The cookie is HttpOnly and SameSite=Strict. It is not marked Secure, because v1 is plain HTTP. Add Secure when HTTPS lands.
@@ -38,7 +44,30 @@ Both services mount `glossary/` read-only at `/glossary`:
 - ASR: `ASR_GLOSSARY_PATH=/glossary/deep-learning.csv`
 - translate: `TRANSLATE_GLOSSARY_DIR=/glossary`
 
-The translate image also copies that directory at build time. The mount hides the copy, so an edit on the host is what the process reads.
+The translate image also copies that directory at build time. The mount hides the copy, so an edit on the host is what the process reads. The glossary mount stays read-only. ASR runs as uid 10001 and web as uid 10002, and both can read a normal `644` file.
+
+## Saved results
+
+A finished upload is written to `RESULT_DIR` (default `/data/results`) before the page is told the job is done. The file is the bilingual segments. The page lists name, date, and duration, reopens a result, and downloads `captions.txt` and `captions.srt`. Delete removes that file. Audio temp files are still deleted when processing finishes; they are not in this directory. Only the latest few jobs stay in the web process. The files survive a container restart. Details are in [results.md](results.md).
+
+Compose mounts the named volume `web-results` at `/data/results`. To keep the files on the host instead, replace that volume with a bind mount of `deploy/data` (gitignored):
+
+```yaml
+- ./data/results:/data/results
+```
+
+```bash
+mkdir -p deploy/data/results
+sudo chown -R 10002:10002 deploy/data
+```
+
+`RESULT_RETENTION_DAYS` defaults to 7. Expired files are removed when web starts and about once an hour. `0` keeps every result until someone deletes it. An empty or unset value uses 7.
+
+If an older `asr-models` volume was created while ASR ran as root, the non-root process cannot write weights. Fix it once:
+
+```bash
+docker compose -f deploy/docker-compose.yml run --user root --rm asr chown -R asr:asr /models
+```
 
 Whisper weights go in the `asr-models` volume or via `services/asr/scripts/download_model.py`. Opus-mt weights are `services/translate/models/opus-mt-en-zh-ct2`, built with the translate README. Both are gitignored. Until the opus-mt directory exists, translate's `/health` stays 503 and Chinese columns fall back to English.
 

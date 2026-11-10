@@ -70,17 +70,18 @@ def test_odd_pcm_and_unknown_bytes_raise():
         decode_audio_bytes(b"not-audio", "notes.txt")
 
 
-def test_mp3_upload_decodes_when_pyav_is_installed(tmp_path):
+@pytest.mark.parametrize("ext", ["mp3", "opus", "m4a"])
+def test_compressed_upload_decodes_when_pyav_is_installed(tmp_path, ext):
     pytest.importorskip("av")
     if shutil.which("ffmpeg") is None:
         pytest.skip("ffmpeg is not installed")
     wav_path = tmp_path / "tone.wav"
-    mp3_path = tmp_path / "tone.mp3"
+    encoded = tmp_path / f"tone.{ext}"
     wav_path.write_bytes(wav_bytes_from_pcm16(sine_pcm16(0.4)))
     subprocess.check_call(
-        ["ffmpeg", "-y", "-loglevel", "error", "-i", str(wav_path), str(mp3_path)],
+        ["ffmpeg", "-y", "-loglevel", "error", "-i", str(wav_path), str(encoded)],
         stdout=subprocess.DEVNULL,
     )
-    samples, sample_rate = decode_audio_bytes(mp3_path.read_bytes(), "tone.mp3")
+    samples, sample_rate = decode_audio_bytes(encoded.read_bytes(), encoded.name)
     assert sample_rate == TARGET_SR
     assert samples.size > 1000

@@ -5,3 +5,7 @@ tests
 **/*.mp3
 **/*.m4a
 **/*.webm
+.env
+*.env
+node_modules
+*.upload

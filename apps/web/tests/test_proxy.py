@@ -129,6 +129,8 @@ def test_index_offers_both_columns():
         assert response.status == 200
         assert 'id="captions"' in html
         assert 'id="live-btn"' in html
+        assert 'id="history-list"' in html
+        assert "过去的结果" in html
         assert "中文" in html
     finally:
         web.shutdown()

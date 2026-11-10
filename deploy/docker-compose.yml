@@ -30,6 +30,7 @@ services:
       ASR_BATCH_WINDOW_SECONDS: ${ASR_BATCH_WINDOW_SECONDS:-45}
       ASR_PARTIAL_SECONDS: ${ASR_PARTIAL_SECONDS:-0}
       ASR_MAX_AUDIO_SECONDS: ${ASR_MAX_AUDIO_SECONDS:-7200}
+      ASR_MAX_UPLOAD_MB: ${ASR_MAX_UPLOAD_MB:-100}
       ASR_CORS_ORIGINS: ${ASR_CORS_ORIGINS:-*}
       ASR_PORT: "8001"
     volumes:
@@ -95,6 +96,16 @@ services:
       COURSE_ID: ${COURSE_ID:-deep-learning}
       COURSE_TITLE: ${COURSE_TITLE:-Deep Learning}
       ASR_MAX_AUDIO_SECONDS: ${ASR_MAX_AUDIO_SECONDS:-7200}
+      ASR_MAX_UPLOAD_MB: ${ASR_MAX_UPLOAD_MB:-100}
+      # Bytes. Leave unset to follow ASR_MAX_UPLOAD_MB above.
+      UPLOAD_MAX_BODY: ${UPLOAD_MAX_BODY:-}
+      RESULT_DIR: ${RESULT_DIR:-/data/results}
+      RESULT_RETENTION_DAYS: ${RESULT_RETENTION_DAYS:-7}
+    volumes:
+      # Named volume keeps results across restarts and is owned by uid 10002.
+      # Bind mount instead: ./data/results:/data/results
+      # (deploy/data is gitignored; chown 10002:10002). See docs/results.md.
+      - web-results:/data/results
     ports:
       - "${WEB_PUBLISH:-0.0.0.0:8080}:8080"
     cpus: "0.1"
@@ -109,3 +120,4 @@ services:
 
 volumes:
   asr-models:
+  web-results:
