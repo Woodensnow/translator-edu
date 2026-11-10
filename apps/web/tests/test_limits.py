@@ -102,6 +102,7 @@ def test_chinese_filename_is_percent_encoded(monkeypatch):
         while time.time() < deadline and not seen:
             time.sleep(0.02)
         assert seen == [name]
+        QUEUE._queue.join()
     finally:
         QUEUE._runner = previous
         web.shutdown()

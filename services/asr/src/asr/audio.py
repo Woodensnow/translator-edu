@@ -1,8 +1,8 @@
 """PCM and upload decoding.
 
 Streaming clients send 16 kHz mono PCM16 little-endian. Uploads may be WAV
-(decoded with the standard library) or another format PyAV can open. PyAV ships
-with faster-whisper; the unit tests stay on WAV so CI does not need it.
+(decoded with the standard library) or another format PyAV can open. CI installs
+PyAV and ffmpeg so mp3, opus, and m4a take this path.
 """
 
 from __future__ import annotations

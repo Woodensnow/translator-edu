@@ -148,6 +148,40 @@ export function tooLongMessage(maxSeconds) {
   return `录音太长，请分段上传（上限 ${maxSeconds} 秒）`;
 }
 
+/** Rows the poll has not drawn yet. Earlier rows stay in the DOM. */
+export function rowsToAppend(previousCount, segments) {
+  const count = Number.isFinite(previousCount) ? Math.max(0, Math.floor(previousCount)) : 0;
+  return (segments || []).slice(count);
+}
+
+export function formatDuration(seconds) {
+  if (seconds == null || seconds === "") return "—";
+  const value = Number(seconds);
+  if (!Number.isFinite(value) || value < 0) return "—";
+  const total = Math.round(value);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+  if (hours) return `${hours}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  return `${minutes}:${String(secs).padStart(2, "0")}`;
+}
+
+export function formatFinished(unixSeconds) {
+  const value = Number(unixSeconds);
+  if (!Number.isFinite(value)) return "";
+  const date = new Date(value * 1000);
+  if (Number.isNaN(date.getTime())) return "";
+  const iso = date.toISOString();
+  return `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;
+}
+
+export function retentionLabel(days) {
+  const value = Number(days);
+  if (!Number.isFinite(value) || value < 0) return "";
+  if (value === 0) return "结果会一直保留，直到手动删除。";
+  return `结果保留 ${value} 天。`;
+}
+
 export function toBilingualTxt(segments) {
   return (segments || [])
     .map((segment) => `${formatTimestamp(segment.start)}\n${segment.text}\n${segment.translation || ""}`)

@@ -7,9 +7,11 @@ import {
   formatTimestamp,
   liveCaptureAvailable,
   progressLine,
+  formatDuration,
+  formatFinished,
+  retentionLabel,
+  rowsToAppend,
   showJobSegments,
-  toBilingualSrt,
-  toBilingualTxt,
   tooLongMessage,
 } from "./captions.js";
 import { TranslateUnavailable, packTranslateBatches, translateSegments } from "./translate-client.js";
@@ -25,7 +27,11 @@ const els = {
   progress: document.querySelector("#progress"),
   downloadTxt: document.querySelector("#download-txt"),
   downloadSrt: document.querySelector("#download-srt"),
+  history: document.querySelector("#history-list"),
+  historyNote: document.querySelector("#history-note"),
 };
+
+let openResultId = null;
 
 let state = createCaptionState();
 let config = {
@@ -55,8 +61,10 @@ async function init() {
     els.live.disabled = true;
     showBanner("The microphone needs HTTPS or http://127.0.0.1. You can still upload a recording.");
   }
+  if (els.historyNote) els.historyNote.textContent = retentionLabel(config.resultRetentionDays);
   setStatus("Ready", "idle");
   render();
+  loadHistory();
   els.live.addEventListener("click", () => startLive());
   els.stop.addEventListener("click", () => stopLive());
   els.file.addEventListener("change", () => {
@@ -291,6 +299,8 @@ async function uploadBlob(blob, filename) {
   setStatus("排队中…", "idle");
   hideBanner();
   hideDownloads();
+  openResultId = null;
+  resetCaptions();
   const name = filename || "lecture.webm";
   const response = await fetch("/jobs", {
     method: "POST",
@@ -333,8 +343,9 @@ async function pollJob(id) {
     }
     seen.push(...(job.segments || []));
     cursor = Number.isInteger(job.next) ? job.next : seen.length;
+    const before = state.segments.length;
     state = showJobSegments(state, seen);
-    render();
+    appendCaptionRows(rowsToAppend(before, state.segments));
     if (els.progress && job.total_seconds) {
       els.progress.hidden = false;
       els.progress.textContent = progressLine(job.processed_seconds || 0, job.total_seconds);
@@ -343,7 +354,9 @@ async function pollJob(id) {
     if (job.status === "running") setStatus("正在转写…", "live");
     if (job.status === "done") {
       setStatus("Recording transcribed", "idle");
-      showDownloads(seen);
+      openResultId = id;
+      showPersistedDownloads(id);
+      loadHistory();
       return;
     }
     if (job.status === "error") {
@@ -354,24 +367,134 @@ async function pollJob(id) {
   }
 }
 
-function showDownloads(segments) {
-  if (!els.downloadTxt || !els.downloadSrt) return;
-  els.downloadTxt.href = blobUrl(toBilingualTxt(segments));
+function resetCaptions() {
+  state = { ...createCaptionState(), generation: state.generation + 1 };
+  render();
+}
+
+function appendCaptionRows(segments) {
+  if (!segments.length || !els.captions) return;
+  const empty = els.captions.querySelector(".empty");
+  if (empty) empty.remove();
+  const nearBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 120;
+  for (const segment of segments) els.captions.appendChild(renderLine(segment, false));
+  if (nearBottom) window.scrollTo(0, document.body.scrollHeight);
+}
+
+function showPersistedDownloads(id) {
+  if (!els.downloadTxt || !els.downloadSrt || !id) return;
+  const safe = encodeURIComponent(id);
+  els.downloadTxt.href = `/results/${safe}.txt`;
   els.downloadTxt.download = "captions.txt";
-  els.downloadSrt.href = blobUrl(toBilingualSrt(segments));
+  els.downloadSrt.href = `/results/${safe}.srt`;
   els.downloadSrt.download = "captions.srt";
   els.downloadTxt.hidden = false;
   els.downloadSrt.hidden = false;
+}
+
+async function loadHistory() {
+  if (!els.history) return;
+  let response;
+  try {
+    response = await fetch("/results", { cache: "no-store", credentials: "same-origin" });
+  } catch {
+    return;
+  }
+  if (response.status === 401) {
+    window.location.href = "/login";
+    return;
+  }
+  if (!response.ok) return;
+  const payload = await response.json();
+  renderHistory(payload.results || []);
+}
+
+function renderHistory(results) {
+  els.history.replaceChildren();
+  if (!results.length) {
+    const empty = document.createElement("li");
+    empty.className = "history-empty";
+    empty.textContent = "还没有保存的结果。";
+    els.history.appendChild(empty);
+    return;
+  }
+  for (const item of results) {
+    const row = document.createElement("li");
+    const name = document.createElement("span");
+    name.className = "history-name";
+    name.textContent = item.name || "lecture";
+    const meta = document.createElement("span");
+    meta.className = "history-meta";
+    meta.textContent = `${formatFinished(item.finished_at)} · ${formatDuration(item.duration)}`;
+    const open = document.createElement("button");
+    open.type = "button";
+    open.textContent = "打开";
+    open.addEventListener("click", () => reopenResult(item.id));
+    const txt = document.createElement("a");
+    txt.href = `/results/${encodeURIComponent(item.id)}.txt`;
+    txt.textContent = "TXT";
+    const srt = document.createElement("a");
+    srt.href = `/results/${encodeURIComponent(item.id)}.srt`;
+    srt.textContent = "SRT";
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "danger";
+    remove.textContent = "删除";
+    remove.addEventListener("click", () => deleteResult(item.id, item.name));
+    row.append(name, meta, open, txt, srt, remove);
+    els.history.appendChild(row);
+  }
+}
+
+async function reopenResult(id) {
+  const response = await fetch(`/results/${encodeURIComponent(id)}`, { cache: "no-store", credentials: "same-origin" });
+  if (response.status === 401) {
+    window.location.href = "/login";
+    return;
+  }
+  if (!response.ok) {
+    setStatus("找不到这条结果", "warn");
+    return;
+  }
+  const job = await response.json();
+  hideBanner();
+  openResultId = id;
+  state = showJobSegments({ ...createCaptionState(), generation: state.generation + 1 }, job.segments || []);
+  render();
+  showPersistedDownloads(id);
+  if (els.progress) {
+    const known = job.duration != null;
+    els.progress.hidden = !known;
+    if (known) els.progress.textContent = progressLine(job.duration, job.duration);
+  }
+  setStatus(job.name || "已打开", "idle");
+  window.scrollTo(0, 0);
+}
+
+async function deleteResult(id, name) {
+  const label = name || "这条结果";
+  if (!window.confirm(`删除「${label}」？此操作会从磁盘移除。`)) return;
+  const response = await fetch(`/results/${encodeURIComponent(id)}`, { method: "DELETE", credentials: "same-origin" });
+  if (response.status === 401) {
+    window.location.href = "/login";
+    return;
+  }
+  if (!response.ok) {
+    setStatus("删除失败", "warn");
+    return;
+  }
+  if (openResultId === id) {
+    openResultId = null;
+    hideDownloads();
+    resetCaptions();
+  }
+  await loadHistory();
 }
 
 function hideDownloads() {
   if (!els.downloadTxt || !els.downloadSrt) return;
   els.downloadTxt.hidden = true;
   els.downloadSrt.hidden = true;
-}
-
-function blobUrl(text) {
-  return URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
 }
 
 async function translateIds(ids) {

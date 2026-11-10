@@ -29,14 +29,43 @@ from auth import (
     ensure_token,
     presented_token,
     set_cookie_header,
-    tokens_equal,
 )
 from jobs import Job
+from results import InvalidJobId, ResultStore, parse_retention_days, render_srt, render_txt
 
 ROOT = Path(__file__).resolve().parent
 TRANSLATE_MAX_BODY = 16 * 1024
-TRANSCRIBE_MAX_BODY = 100 * 1024 * 1024
 GUARD = AuthGuard()
+STORE = ResultStore()
+
+
+def upload_max_body() -> int:
+    """Byte cap for one recording upload.
+
+    ``UPLOAD_MAX_BODY`` is an integer number of bytes. When it is unset, the
+    cap matches ASR: ``ASR_MAX_UPLOAD_MB`` (default 100) times 1024 squared.
+    """
+
+    raw = os.environ.get("UPLOAD_MAX_BODY", "").strip()
+    if raw:
+        try:
+            value = int(raw)
+        except ValueError as exc:
+            raise ValueError("UPLOAD_MAX_BODY must be an integer number of bytes.") from exc
+        if value < 1:
+            raise ValueError("UPLOAD_MAX_BODY must be >= 1.")
+        return value
+    mb_raw = os.environ.get("ASR_MAX_UPLOAD_MB", "").strip()
+    if not mb_raw:
+        megabytes = 100
+    else:
+        try:
+            megabytes = int(mb_raw)
+        except ValueError as exc:
+            raise ValueError("ASR_MAX_UPLOAD_MB must be an integer.") from exc
+        if megabytes < 1:
+            raise ValueError("ASR_MAX_UPLOAD_MB must be >= 1.")
+    return megabytes * 1024 * 1024
 
 STATIC_FILES = {
     "/": "index.html",
@@ -84,6 +113,10 @@ def config() -> dict:
 def public_config() -> dict:
     """Fields the browser needs. Internal service URLs stay on the server."""
 
+    try:
+        retention = parse_retention_days(os.environ.get("RESULT_RETENTION_DAYS"))
+    except ValueError:
+        retention = 7
     return {
         "course": os.environ.get("COURSE_ID", "deep-learning"),
         "courseTitle": os.environ.get("COURSE_TITLE", "Deep Learning"),
@@ -91,6 +124,7 @@ def public_config() -> dict:
         "translatePath": "/translate",
         "asrWsPath": "/ws/transcribe",
         "maxAudioSeconds": int(float(os.environ.get("ASR_MAX_AUDIO_SECONDS", "7200"))),
+        "resultRetentionDays": retention,
     }
 
 
@@ -259,7 +293,7 @@ def _runner(job: Job) -> None:
 def _build_queue():
     from jobs import UploadQueue
 
-    return UploadQueue(_runner)
+    return UploadQueue(_runner, store=STORE)
 
 
 QUEUE = _build_queue()
@@ -305,6 +339,11 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self._send_bytes(200, json.dumps(snapshot).encode("utf-8"), "application/json")
             return
+        if path == "/results" or path.startswith("/results/"):
+            if not self._allow_api():
+                return
+            self._read_result(path)
+            return
         file_path = static_path(path)
         if file_path is None:
             self.send_error(404)
@@ -329,15 +368,37 @@ class Handler(BaseHTTPRequestHandler):
             return
         self.send_error(404)
 
+    def do_DELETE(self):
+        path = self.path.split("?", 1)[0]
+        if not path.startswith("/results/"):
+            self.send_error(404)
+            return
+        if not self._allow_api():
+            return
+        self._delete_result(path)
+
     def _allow_api(self) -> bool:
-        """API calls are never locked out. A valid cookie still works."""
+        """Count a wrong API token the same way as a wrong login.
+
+        The correct token is accepted even while that IP is locked.
+        """
 
         expected = configured_token()
         if not expected:
             return True
         presented = presented_token(self.headers)
-        if presented and tokens_equal(presented, expected):
+        state = GUARD.check(self.client_address[0], presented, expected)
+        if state == "ok":
             return True
+        if state == "locked":
+            retry = GUARD.retry_after(self.client_address[0])
+            self._send_bytes(
+                429,
+                b'{"detail":"too many attempts"}',
+                "application/json",
+                extra=[f"Retry-After: {retry}"],
+            )
+            return False
         self._send_bytes(401, b'{"detail":"unauthorized"}', "application/json")
         return False
 
@@ -366,7 +427,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _enqueue(self) -> None:
         try:
-            length = parse_content_length(self.headers.get("Content-Length"), TRANSCRIBE_MAX_BODY)
+            length = parse_content_length(self.headers.get("Content-Length"), upload_max_body())
         except ContentLengthError as exc:
             self._send_bytes(exc.status, json.dumps({"detail": str(exc)}).encode(), "application/json")
             return
@@ -431,10 +492,68 @@ class Handler(BaseHTTPRequestHandler):
         for item in extra or []:
             if item.startswith("Retry-After"):
                 self.send_header("Retry-After", item.split(":", 1)[1].strip())
+            elif item.lower().startswith("content-disposition:"):
+                self.send_header("Content-Disposition", item.split(":", 1)[1].strip())
             else:
                 self.send_header("Set-Cookie", item)
         self.end_headers()
         self.wfile.write(body)
+
+    def _read_result(self, path: str) -> None:
+        if path == "/results":
+            body = json.dumps({"results": STORE.list_results()}, ensure_ascii=False).encode("utf-8")
+            self._send_bytes(200, body, "application/json; charset=utf-8")
+            return
+        rest = urllib.parse.unquote(path.removeprefix("/results/"))
+        kind = "json"
+        job_id = rest
+        if rest.endswith(".txt"):
+            kind = "txt"
+            job_id = rest[: -len(".txt")]
+        elif rest.endswith(".srt"):
+            kind = "srt"
+            job_id = rest[: -len(".srt")]
+        try:
+            payload = STORE.get(job_id)
+        except InvalidJobId:
+            self._send_bytes(400, b'{"detail":"Invalid job id."}', "application/json")
+            return
+        if payload is None:
+            self._send_bytes(404, b'{"detail":"Result was not found."}', "application/json")
+            return
+        if kind == "json":
+            self._send_bytes(
+                200,
+                json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                "application/json; charset=utf-8",
+            )
+            return
+        segments = payload.get("segments") if isinstance(payload.get("segments"), list) else []
+        if kind == "txt":
+            body = render_txt(segments).encode("utf-8")
+            disposition = 'attachment; filename="captions.txt"'
+        else:
+            body = render_srt(segments).encode("utf-8")
+            disposition = 'attachment; filename="captions.srt"'
+        self._send_bytes(
+            200,
+            body,
+            "text/plain; charset=utf-8",
+            extra=[f"Content-Disposition: {disposition}"],
+        )
+
+    def _delete_result(self, path: str) -> None:
+        job_id = urllib.parse.unquote(path.removeprefix("/results/"))
+        try:
+            removed = STORE.delete(job_id)
+        except InvalidJobId:
+            self._send_bytes(400, b'{"detail":"Invalid job id."}', "application/json")
+            return
+        if not removed:
+            self._send_bytes(404, b'{"detail":"Result was not found."}', "application/json")
+            return
+        QUEUE.forget_finished(job_id)
+        self._send_bytes(200, b'{"ok":true}', "application/json")
 
 
 def _filename_header(raw: str | None) -> str:
@@ -461,6 +580,20 @@ def main() -> None:
     ensure_token(env)
     if not configured_token():
         print("WARNING: WEB_ACCESS_TOKEN is unset; the captions API is open.", flush=True)
+    try:
+        days = parse_retention_days(os.environ.get("RESULT_RETENTION_DAYS"))
+        upload_max_body()
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    try:
+        STORE.start()
+    except OSError as exc:
+        raise SystemExit(
+            f"RESULT_DIR {STORE.directory} is not writable ({exc}). "
+            "The web image runs as uid 10002. On a bind mount: sudo chown -R 10002:10002 <host path>."
+        ) from exc
+    kept = "until manually deleted" if days == 0 else f"{days} day(s)"
+    print(f"results in {STORE.directory} (keep {kept})", flush=True)
     host = os.environ.get("WEB_HOST", "0.0.0.0")
     port = int(os.environ.get("WEB_PORT", "8080"))
     server = ThreadingHTTPServer((host, port), Handler)

@@ -18,6 +18,8 @@ lecturer's browser
 
 The browser never opens ASR or translate. Those processes have no authentication, and translate allows every origin. On Alibaba Cloud ECS the security group should allow the web port only. See [deploy.md](deploy.md).
 
+Finished uploads are stored as JSON under `RESULT_DIR` (see [results.md](results.md)). The page keeps only the latest few jobs in memory.
+
 Live audio is 16 kHz mono PCM in 4-second windows. Each finished English segment is sent to translate on its own, with the same `id`, `start`, and `end` the page is showing. A recording upload is the fallback when live transcription runs slower than real time: the browser keeps the audio and posts the file when you stop.
 
 The translate request and response are defined in [services/translate/README.md](../services/translate/README.md). The page's path through that API is [translate-contract.md](translate-contract.md).

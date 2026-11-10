@@ -8,8 +8,12 @@ import {
   createCaptionState,
   formatTimestamp,
   liveCaptureAvailable,
+  formatDuration,
+  formatFinished,
   progressLine,
   replaceWithBatch,
+  retentionLabel,
+  rowsToAppend,
   toBilingualSrt,
   tooLongMessage,
 } from "../js/captions.js";
@@ -79,4 +83,21 @@ test("503 fallback shows the English line and a later batch does not reuse it", 
   assert.equal(progressLine(12 * 60, 90 * 60), "已处理 12/90 分钟");
   assert.equal(tooLongMessage(7200), "录音太长，请分段上传（上限 7200 秒）");
   assert.match(toBilingualSrt([{ start: 0, end: 1.5, text: "Hello", translation: "你好" }]), /00:00:00,000 --> 00:00:01,500/);
+});
+
+test("polling appends only the rows that are not on screen yet", () => {
+  const segments = [
+    { id: "s1", text: "one" },
+    { id: "s2", text: "two" },
+    { id: "s3", text: "three" },
+  ];
+  assert.deepEqual(rowsToAppend(0, segments).map((row) => row.id), ["s1", "s2", "s3"]);
+  assert.deepEqual(rowsToAppend(2, segments).map((row) => row.id), ["s3"]);
+  assert.deepEqual(rowsToAppend(3, segments), []);
+  assert.equal(formatDuration(95), "1:35");
+  assert.equal(formatDuration(3661), "1:01:01");
+  assert.equal(formatDuration(null), "—");
+  assert.equal(formatFinished(0), "1970-01-01 00:00 UTC");
+  assert.equal(retentionLabel(7), "结果保留 7 天。");
+  assert.equal(retentionLabel(0), "结果会一直保留，直到手动删除。");
 });
