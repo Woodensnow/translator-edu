@@ -1,0 +1,41 @@
+# CPU-only translation service for one of the 2-core servers.
+#
+# From the repository root:
+#   docker compose -f services/translate/docker-compose.yml up --build
+#
+# Eve: paste the service into deploy/docker-compose.yml and change
+# build.context from "../.." to ".." (deploy/ is one level below the repo
+# root). Change the volume source to
+# ../services/translate/models/opus-mt-en-zh-ct2.
+
+services:
+  translate:
+    build:
+      context: ../..
+      dockerfile: services/translate/Dockerfile
+    image: translator-edu-translate:cpu
+    ports:
+      - "8081:8080"
+    environment:
+      TRANSLATE_BACKEND: ctranslate2
+      TRANSLATE_MODEL_DIR: /models/opus-mt-en-zh-ct2
+      TRANSLATE_GLOSSARY_DIR: /glossary
+      TRANSLATE_INTRA_THREADS: "2"
+      TRANSLATE_INTER_THREADS: "1"
+      TRANSLATE_BEAM_SIZE: "1"
+    volumes:
+      - ./models/opus-mt-en-zh-ct2:/models/opus-mt-en-zh-ct2:ro
+    restart: unless-stopped
+    cpus: "2"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

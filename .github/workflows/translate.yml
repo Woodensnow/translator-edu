@@ -1,0 +1,37 @@
+name: translate
+
+on:
+  pull_request:
+    paths:
+      - "services/translate/**"
+      - "glossary/**"
+      - ".github/workflows/translate.yml"
+      - ".gitignore"
+  push:
+    branches: [main]
+    paths:
+      - "services/translate/**"
+      - "glossary/**"
+      - ".github/workflows/translate.yml"
+      - ".gitignore"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: glossary and translate API
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install test dependencies
+        run: python -m pip install --upgrade pip && pip install -r services/translate/requirements-ci.txt
+      - name: Run tests with the model mocked
+        working-directory: services/translate
+        env:
+          TRANSLATE_BACKEND: mock
+          TRANSLATE_GLOSSARY_DIR: ${{ github.workspace }}/glossary
+        run: pytest -q

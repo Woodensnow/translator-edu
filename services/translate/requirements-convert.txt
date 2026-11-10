@@ -1,0 +1,8 @@
+# One-time conversion on a machine with a few GB of RAM.
+# Install a CPU PyTorch wheel first so pip does not pull CUDA:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   pip install -r requirements-convert.txt
+transformers>=4.44,<5
+sentencepiece>=0.2,<0.3
+ctranslate2>=4.4,<5
+huggingface_hub>=0.24,<1
