@@ -167,6 +167,37 @@ def test_store_reloads_and_keeps_last_good_file(tmp_path: Path):
     assert exc.value.available == ["demo"]
 
 
+def test_acronyms_and_names_do_not_eat_ordinary_words():
+    assert GLOSSARY.protect("ais are ordinary words")[1] == []
+    assert GLOSSARY.protect("Ask Adams about the result.")[1] == []
+    assert GLOSSARY.protect("cnns are lowercase")[1] == []
+    assert [match.en for match in GLOSSARY.protect("AI and AIs use CNNs.")[1]] == ["AI", "AI", "CNN"]
+    assert [match.matched for match in GLOSSARY.protect("AI and AIs use CNNs.")[1]] == ["AI", "AIs", "CNNs"]
+    assert [match.en for match in GLOSSARY.protect("Adam and adam update the weights.")[1]] == [
+        "Adam",
+        "Adam",
+        "weight",
+    ]
+
+
+def test_restore_allows_a_space_before_the_sentinel_index():
+    match = Match(0, 4, placeholder_for(0), "dropout", "暂退法", "", "dropout")
+    restored, missing = restore_placeholders("使用 ZXQ 0 训练。", [match])
+    assert missing == []
+    assert restored == "使用 暂退法 训练。"
+    spaced_zi, missing_zi = restore_placeholders("兹XQ 0", [match])
+    assert missing_zi == []
+    assert spaced_zi == "暂退法"
+
+
+def test_spaced_sentinel_does_not_swallow_a_longer_index():
+    one = Match(0, 4, placeholder_for(1), "dropout", "暂退法", "", "dropout")
+    ten = Match(0, 5, placeholder_for(10), "pooling", "汇聚", "", "pooling")
+    restored, missing = restore_placeholders("ZXQ 10 then ZXQ 1.", [one, ten])
+    assert missing == []
+    assert restored == "汇聚 then 暂退法."
+
+
 def test_existing_sentinel_index_is_not_reused():
     sentinel = placeholder_for(0)
     protected, matches = GLOSSARY.protect(f"{sentinel} uses dropout.")
