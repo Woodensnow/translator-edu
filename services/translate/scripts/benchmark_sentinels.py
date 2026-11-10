@@ -151,6 +151,8 @@ def render_markdown(payload: dict) -> str:
         "Measured with CTranslate2 int8 `Helsinki-NLP/opus-mt-en-zh` on CPU.",
         "Not run in CI. Regenerate with `python scripts/benchmark_sentinels.py --write benchmarks/sentinel-results.md`.",
         "",
+        "These figures are twelve synthetic sentences on a dev machine with `intra_threads=2`, not on Tim's 2-core Alibaba server. Re-run this script there with 50 or more real lecture sentences before treating the latencies as that machine's budget, and record how often the fragment fallback runs.",
+        "",
         f"- ctranslate2: `{payload['ctranslate2']}`",
         f"- device: cpu, intra_threads={payload['intra_threads']}, inter_threads=1, beam=1, int8",
         f"- host: `{payload['host']}`",

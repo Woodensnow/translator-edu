@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.main import create_app
-from app.translator import CTranslate2Translator
+from app.translator import LOAD_RETRY_SECONDS, CTranslate2Translator, ModelNotReady
 
 ROOT = Path(__file__).resolve().parents[3]
 GLOSSARY = ROOT / "glossary"
@@ -128,6 +128,54 @@ def test_cpu_backend_reports_not_ready_without_weights(tmp_path: Path):
         translated = local.post("/translate", json={"text": "epoch"})
         assert translated.status_code == 503
         assert "download_model.py" in translated.text
+
+
+def _ready_model_dir(tmp_path: Path) -> Path:
+    model = tmp_path / "model"
+    model.mkdir()
+    for name in ("model.bin", "source.spm", "target.spm"):
+        (model / name).write_bytes(b"x")
+    return model
+
+
+def test_health_retries_a_failed_load_without_the_inference_lock(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    translator = CTranslate2Translator(
+        Settings(backend="ctranslate2", glossary_dir=GLOSSARY, model_dir=_ready_model_dir(tmp_path))
+    )
+    attempts = {"n": 0}
+
+    def flaky() -> None:
+        attempts["n"] += 1
+        if attempts["n"] < 3:
+            raise ModelNotReady("weights not ready")
+        translator._translator = object()
+
+    monkeypatch.setattr(translator, "_load_if_needed", flaky)
+    ready, detail = translator.prepare()
+    assert ready is False
+    assert detail == "weights not ready"
+
+    assert translator._lock.acquire(blocking=False)
+    try:
+        retry, retry_detail = translator.health()
+        blocked, _blocked_detail = translator.health()
+    finally:
+        translator._lock.release()
+    assert retry is False
+    assert retry_detail == "weights not ready"
+    assert blocked is False
+    assert attempts["n"] == 2
+
+    translator._next_load_attempt = 0
+    assert translator._lock.acquire(blocking=False)
+    try:
+        loaded, loaded_detail = translator.health()
+    finally:
+        translator._lock.release()
+    assert loaded is True
+    assert loaded_detail is None
+    assert attempts["n"] == 3
+    assert LOAD_RETRY_SECONDS >= 1
 
 
 def test_blank_text_is_accepted(client: TestClient):

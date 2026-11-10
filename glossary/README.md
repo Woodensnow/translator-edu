@@ -16,7 +16,7 @@ en,zh,note
 | `zh` | yes | Mainland Chinese rendering to force |
 | `note` | yes, may be empty | Hint for lecturers. Not sent to the model |
 
-Extra columns are ignored. `en` and `zh` are required on every row. Matching is case-insensitive and prefers the longest phrase. A hyphen in the English term also matches a space or nothing (`fine-tuning`, `fine tuning`, `finetuning`). A trailing `s` or `es` is accepted (`weights`, `CNNs`, `mini-batches`, `biases`), so one row covers those variants. Spaced and closed spellings of a hyphenated term do not need their own rows.
+Extra columns are ignored. `en` and `zh` are required on every row. Matching prefers the longest phrase. A hyphen in the English term also matches a space or nothing (`fine-tuning`, `fine tuning`, `finetuning`). Ordinary terms accept a trailing `s` or `es` (`weights`, `mini-batches`, `biases`). All-caps acronyms match only as written, plus a lowercase plural `s` (`AI`, `AIs`, `CNNs`), so `ais` is not treated as AI. A title-case name such as `Adam` has no plural, so `Adams` is left alone. Spaced and closed spellings of a hyphenated term do not need their own rows.
 
 The starter course is Deep Learning and Neural Networks: `glossary/deep-learning.csv`. Wording follows 《动手学深度学习》 where that book has a settled translation, including 暂退法, 批量规范化, 汇聚, and 迭代周期. A few names stay in Latin (`Transformer`, `Softmax`, `ReLU`, `Adam`).
 

@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import threading
+import time
 from pathlib import Path
 
 from app.config import Settings
@@ -20,6 +21,8 @@ logger = logging.getLogger("translate.backend")
 _SPECIAL_TOKENS = {"<s>", "</s>", "<unk>", "<pad>"}
 _MAX_INPUT_TOKENS = 256
 _MAX_DECODING_LENGTH = 256
+# Health checks must not reload on every poll. Docker's interval is 30s.
+LOAD_RETRY_SECONDS = 30.0
 
 
 class ModelNotReady(RuntimeError):
@@ -49,6 +52,9 @@ class CTranslate2Translator:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self._lock = threading.Lock()
+        self._load_lock = threading.Lock()
+        self._next_load_attempt = 0.0
+        self._last_load_error: str | None = None
         self._model_dir: Path | None = None
         self._source = None
         self._target = None
@@ -57,23 +63,54 @@ class CTranslate2Translator:
     def health(self) -> tuple[bool, str | None]:
         """Report readiness without taking the inference lock.
 
-        A Docker health check must not queue behind a caption that is already
-        translating. Startup calls ``prepare``, which is what loads the model.
+        A failed startup load is retried from here, rate-limited, and only when
+        the load lock is free. A caption in progress is not queued behind.
         """
         if self._translator is not None:
             return True, None
         problem = self._availability_error()
         if problem:
             return False, problem
-        return False, "model is not loaded"
+        self._retry_load()
+        if self._translator is not None:
+            return True, None
+        return False, self._last_load_error or "model is not loaded"
 
     def prepare(self) -> tuple[bool, str | None]:
         try:
-            with self._lock:
+            with self._load_lock:
                 self._load_if_needed()
         except Exception as exc:
-            return False, str(exc)
+            self._last_load_error = str(exc)
+            return False, self._last_load_error
+        self._last_load_error = None
         return True, None
+
+    def _retry_load(self) -> None:
+        """Try to load once if the retry window has elapsed. Never blocks."""
+        if self._translator is not None:
+            return
+        now = time.monotonic()
+        if now < self._next_load_attempt:
+            return
+        if not self._load_lock.acquire(blocking=False):
+            return
+        try:
+            if self._translator is not None:
+                return
+            now = time.monotonic()
+            if now < self._next_load_attempt:
+                return
+            self._next_load_attempt = now + LOAD_RETRY_SECONDS
+            try:
+                self._load_if_needed()
+            except Exception as exc:
+                self._last_load_error = str(exc)
+                logger.warning("model load failed; health will retry later: %s", exc)
+            else:
+                self._last_load_error = None
+        finally:
+            self._load_lock.release()
 
     def _availability_error(self) -> str | None:
         try:
@@ -104,7 +141,8 @@ class CTranslate2Translator:
             return outputs
         with self._lock:
             try:
-                self._load_if_needed()
+                with self._load_lock:
+                    self._load_if_needed()
                 translated = self._translate_loaded(batch)
             except ModelNotReady:
                 raise

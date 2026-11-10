@@ -72,17 +72,26 @@ def _alloc_index(used: set[int]) -> int:
     return index
 
 
+_TITLE_NAME = re.compile(r"^[A-Z][a-z]+$")
+
+
 def term_pattern(term: str) -> re.Pattern[str]:
     """Whole-phrase match.
 
     Hyphens match a hyphen, a space, or nothing. Spaces match whitespace.
-    ``(?:es|s)?`` covers ``batches`` and ``biases`` as well as a final ``s``.
+    Ordinary terms accept a trailing ``s`` or ``es`` (``mini-batches``, ``biases``).
+    All-caps acronyms match only in that case, plus a lowercase plural ``s``
+    (``AIs``, ``CNNs``), so ``ais`` is not locked as AI. A title-case name such
+    as ``Adam`` does not take a plural, so ``Adams`` is left alone.
     """
     body = re.escape(term).replace(r"\ ", r"\s+").replace(r"\-", r"[\s-]?")
-    return re.compile(
-        rf"(?<![A-Za-z0-9]){body}(?:es|s)?(?![A-Za-z0-9])",
-        re.IGNORECASE,
-    )
+    prefix = r"(?<![A-Za-z0-9])"
+    boundary = r"(?![A-Za-z0-9])"
+    if term.isupper() and any(character.isalpha() for character in term):
+        return re.compile(rf"{prefix}{body}s?{boundary}")
+    if _TITLE_NAME.fullmatch(term):
+        return re.compile(rf"{prefix}{body}{boundary}", re.IGNORECASE)
+    return re.compile(rf"{prefix}{body}(?:es|s)?{boundary}", re.IGNORECASE)
 
 
 def load_glossary_file(path: Path) -> Glossary:
@@ -196,7 +205,7 @@ def _placeholder_regex(placeholder: str) -> re.Pattern[str]:
     if not number.isdigit():
         raise ValueError(f"unexpected sentinel {placeholder}")
     return re.compile(
-        rf"(?<![A-Za-z])(?:{re.escape(SENTINEL_PREFIX)}|兹XQ){number}(?!\d)",
+        rf"(?<![A-Za-z])(?:{re.escape(SENTINEL_PREFIX)}|兹XQ)\s*{number}(?!\d)",
         re.IGNORECASE,
     )
 
@@ -204,8 +213,9 @@ def _placeholder_regex(placeholder: str) -> re.Pattern[str]:
 def restore_placeholders(text: str, matches: list[Match]) -> tuple[str, list[Match]]:
     """Swap sentinels for Chinese. Returns matches whose sentinel disappeared.
 
-    Matching is case-insensitive. On this checkpoint a leading ``Z`` is
-    sometimes translated as ``兹`` (``兹XQ0``), and that form counts too.
+    Matching is case-insensitive and allows spaces before the digits
+    (``ZXQ 0``). On this checkpoint a leading ``Z`` is sometimes translated
+    as ``兹`` (``兹XQ0``), and that form counts too.
     """
     missing: list[Match] = []
     rendered = text

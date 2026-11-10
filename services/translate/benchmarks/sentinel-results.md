@@ -3,6 +3,8 @@
 Measured with CTranslate2 int8 `Helsinki-NLP/opus-mt-en-zh` on CPU.
 Not run in CI. Regenerate with `python scripts/benchmark_sentinels.py --write benchmarks/sentinel-results.md`.
 
+These figures are twelve synthetic sentences on a dev machine with `intra_threads=2`, not on Tim's 2-core Alibaba server. Re-run this script there with 50 or more real lecture sentences before treating the latencies as that machine's budget, and record how often the fragment fallback runs.
+
 - ctranslate2: `4.8.5`
 - device: cpu, intra_threads=2, inter_threads=1, beam=1, int8
 - host: `Linux-6.12.113+-x86_64-with-glibc2.39`
