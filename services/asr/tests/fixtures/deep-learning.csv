@@ -1,0 +1,4 @@
+en,zh,note
+backpropagation,反向传播,core training term
+gradient descent,梯度下降,
+activation function,激活函数,includes ReLU and sigmoid

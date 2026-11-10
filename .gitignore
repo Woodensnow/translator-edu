@@ -16,10 +16,24 @@ services/translate/models/
 *.ot
 *.h5
 
-# Audio recordings
+# Audio recordings and uploads. Tests synthesize audio in memory.
 *.mp3
 *.m4a
 *.wav
 *.flac
 *.aac
 *.ogg
+*.opus
+*.webm
+recordings/
+uploads/
+
+# ASR weights and download caches. Fetch with
+# services/asr/scripts/download_model.py, or on first transcription.
+models/
+**/.cache/
+**/huggingface/
+*.gguf
+
+# Local environment
+.env

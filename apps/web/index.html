@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lecture captions · translator-edu</title>
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+  <div class="app">
+    <header class="top">
+      <div class="brand">
+        <p class="eyebrow">translator-edu</p>
+        <h1 id="course-title">Lecture captions</h1>
+      </div>
+      <p id="status" class="status is-idle" role="status">Loading…</p>
+    </header>
+    <section class="controls" aria-label="Lecture controls">
+      <label class="upload">
+        上传录音
+        <input id="file" type="file" accept="audio/*,.wav,.mp3,.m4a,.webm,.ogg,.flac">
+      </label>
+      <button type="button" id="live-btn" class="secondary">Live mic (needs HTTPS)</button>
+      <button type="button" id="stop-btn" class="secondary" disabled>Stop</button>
+      <a id="download-txt" hidden>下载文本</a>
+      <a id="download-srt" hidden>下载 SRT</a>
+    </section>
+    <p id="progress" class="progress" hidden></p>
+    <p id="banner" class="banner" hidden></p>
+    <div class="legend" aria-hidden="true">
+      <span></span>
+      <span>English</span>
+      <span>中文</span>
+    </div>
+    <main id="captions" class="captions" aria-live="polite"></main>
+    <footer>
+      <p>v1 用上传录音。页面会按片段显示中英文字幕，全部完成后可以下载。Live mic 仍在，等 HTTPS 后再作为默认。</p>
+    </footer>
+  </div>
+  <noscript><p>JavaScript is required for captions.</p></noscript>
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>
