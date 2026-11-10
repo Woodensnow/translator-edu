@@ -101,7 +101,7 @@ Hits are replaced with sentinels, the sentence is translated, and each sentinel 
 
 [Helsinki-NLP/opus-mt-en-zh](https://huggingface.co/Helsinki-NLP/opus-mt-en-zh) (CC-BY-4.0), a Marian English-to-Chinese model of about 111M parameters (6 encoder layers, 6 decoder layers, hidden size 512). The fp32 checkpoint is about 300MB. This service runs the **CTranslate2 int8** conversion on CPU.
 
-That pair fits one 2-core machine: published CTranslate2 int8 numbers for Opus-MT are on the order of 0.5GB of RAM, and a caption sentence is a small batch. Beam size defaults to 1 for live captions. `intra_threads` is 2 and `inter_threads` is 1, and the process uses a single uvicorn worker so the model is loaded once. Tim has one 2-core server running ASR and translation together. Set `TRANSLATE_INTRA_THREADS=1` in that deployment so a caption translation leaves a core for transcription.
+That pair fits one 2-core machine: published CTranslate2 int8 numbers for Opus-MT are on the order of 0.5GB of RAM, and a caption sentence is a small batch. Beam size defaults to 1 for live captions. `intra_threads` defaults to 2 and `inter_threads` to 1, and the process uses a single uvicorn worker so the model is loaded once. If ASR and translation share one 2-core server, set `TRANSLATE_INTRA_THREADS=1` so a caption translation leaves a core for transcription.
 
 Larger checkpoints (NLLB-600M, `opus-mt-tc-big-en-zho`, mBART) are a poor fit for this CPU budget. float16 is not the default because these servers have no GPU. The runtime never selects CUDA.
 
