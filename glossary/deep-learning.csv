@@ -1,0 +1,100 @@
+en,zh,note
+activation function,激活函数,
+Adam,Adam,优化器名，保留英文
+AI,人工智能,英文缩写，整词匹配
+artificial intelligence,人工智能,
+attention,注意力,
+attention mechanism,注意力机制,
+back propagation,反向传播,空格写法
+back-propagation,反向传播,连字符写法
+backprop,反向传播,口头缩写
+backpropagation,反向传播,
+batch normalization,批量规范化,也称批归一化
+batch size,批量大小,
+bias,偏置,神经元偏置项
+chain rule,链式法则,
+CNN,卷积神经网络,英文缩写
+computation graph,计算图,
+convolution,卷积,
+convolutional layer,卷积层,
+convolutional network,卷积神经网络,口语常省略 neural
+convolutional neural network,卷积神经网络,
+cross entropy,交叉熵,空格写法
+cross-entropy,交叉熵,
+decoder,解码器,
+deep learning,深度学习,
+deep neural network,深度神经网络,
+dropout,暂退法,教材作暂退法；口头常说 Dropout
+early stopping,早停,
+embedding,嵌入,
+encoder,编码器,
+encoder-decoder,编码器-解码器,
+epoch,迭代周期,完整遍历一次训练集；口语也说一轮
+exploding gradient,梯度爆炸,
+feature map,特征图,
+fine-tuning,微调,
+forward pass,前向传播,同 forward propagation
+forward propagation,前向传播,
+fully connected layer,全连接层,
+gated recurrent unit,门控循环单元,
+generalization,泛化,
+gradient,梯度,
+gradient clipping,梯度裁剪,
+gradient descent,梯度下降,
+GRU,门控循环单元,英文缩写
+hidden layer,隐藏层,
+hidden state,隐状态,
+hyperparameter,超参数,
+inference,推理,用训练好的模型做预测
+kernel,卷积核,
+layer normalization,层规范化,
+learning rate,学习率,
+learning rate schedule,学习率调度,
+long short-term memory,长短期记忆网络,
+loss function,损失函数,
+LSTM,长短期记忆网络,英文缩写
+machine learning,机器学习,
+max pooling,最大汇聚,也称最大池化
+mean squared error,均方误差,
+mini-batch,小批量,
+mini-batch gradient descent,小批量梯度下降,
+MLP,多层感知机,英文缩写
+momentum,动量,
+multi-head attention,多头注意力,
+multilayer perceptron,多层感知机,
+neural net,神经网络,口语缩写
+neural network,神经网络,
+neuron,神经元,
+optimizer,优化器,
+overfitting,过拟合,
+parameter,参数,可学习参数
+perceptron,感知机,
+pooling,汇聚,也称池化
+positional encoding,位置编码,
+pre-training,预训练,连字符写法
+pretraining,预训练,
+receptive field,感受野,
+recurrent network,循环神经网络,口语常省略 neural
+recurrent neural network,循环神经网络,
+regularization,正则化,
+ReLU,ReLU,整流线性单元
+residual connection,残差连接,
+RNN,循环神经网络,英文缩写
+scaled dot-product attention,缩放点积注意力,
+self-attention,自注意力,
+SGD,随机梯度下降,英文缩写
+sigmoid,Sigmoid,
+softmax,Softmax,
+stochastic gradient descent,随机梯度下降,
+supervised learning,监督学习,
+tanh,Tanh,双曲正切
+tensor,张量,
+test set,测试集,
+training set,训练集,
+transfer learning,迁移学习,
+transformer,Transformer,中文课堂通常保留英文名
+underfitting,欠拟合,
+validation set,验证集,
+vanishing gradient,梯度消失,
+weight,权重,
+weight decay,权重衰减,

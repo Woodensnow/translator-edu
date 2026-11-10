@@ -1,0 +1,7 @@
+# Runtime image. PyTorch is not installed here.
+# Convert weights once with requirements-convert.txt; do not bake them into the image.
+fastapi>=0.115,<1
+uvicorn>=0.30,<1
+pydantic>=2,<3
+ctranslate2>=4.4,<5
+sentencepiece>=0.2,<0.3

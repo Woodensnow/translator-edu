@@ -1,0 +1,6 @@
+# Tests only. No model runtime and no weight download.
+fastapi>=0.115,<1
+pydantic>=2,<3
+httpx2>=2,<3
+pytest>=8,<9
+uvicorn>=0.30,<1

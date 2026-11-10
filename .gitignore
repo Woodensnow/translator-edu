@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Translation model weights. Download with services/translate/scripts/download_model.py.
+services/translate/models/
+*.safetensors
+*.onnx
+*.pt
+*.pth
+*.ckpt
+*.bin
+*.ot
+*.h5
+
+# Audio recordings
+*.mp3
+*.m4a
+*.wav
+*.flac
+*.aac
+*.ogg
