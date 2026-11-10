@@ -194,7 +194,8 @@ def create_app(
             logger.warning("glossary not loaded: %s", exc)
         else:
             logger.info("glossaries: %s", ", ".join(names))
-        ready, detail = backend.health()
+        prepare = getattr(backend, "prepare", None)
+        ready, detail = prepare() if prepare is not None else backend.health()
         if ready:
             logger.info("translation backend %s is ready", backend.name)
         else:

@@ -5,10 +5,8 @@ AI,人工智能,英文缩写，整词匹配
 artificial intelligence,人工智能,
 attention,注意力,
 attention mechanism,注意力机制,
-back propagation,反向传播,空格写法
-back-propagation,反向传播,连字符写法
+back-propagation,反向传播,连字符、空格或连写都匹配
 backprop,反向传播,口头缩写
-backpropagation,反向传播,
 batch normalization,批量规范化,也称批归一化
 batch size,批量大小,
 bias,偏置,神经元偏置项
@@ -19,8 +17,7 @@ convolution,卷积,
 convolutional layer,卷积层,
 convolutional network,卷积神经网络,口语常省略 neural
 convolutional neural network,卷积神经网络,
-cross entropy,交叉熵,空格写法
-cross-entropy,交叉熵,
+cross-entropy,交叉熵,连字符或空格都匹配
 decoder,解码器,
 deep learning,深度学习,
 deep neural network,深度神经网络,
@@ -71,8 +68,7 @@ parameter,参数,可学习参数
 perceptron,感知机,
 pooling,汇聚,也称池化
 positional encoding,位置编码,
-pre-training,预训练,连字符写法
-pretraining,预训练,
+pre-training,预训练,连字符、空格或连写都匹配
 receptive field,感受野,
 recurrent network,循环神经网络,口语常省略 neural
 recurrent neural network,循环神经网络,

@@ -34,6 +34,9 @@ class MockTranslator:
     def health(self) -> tuple[bool, str | None]:
         return True, None
 
+    def prepare(self) -> tuple[bool, str | None]:
+        return self.health()
+
     def translate_many(self, texts: list[str]) -> list[str]:
         return list(texts)
 
@@ -52,12 +55,38 @@ class CTranslate2Translator:
         self._translator = None
 
     def health(self) -> tuple[bool, str | None]:
+        """Report readiness without taking the inference lock.
+
+        A Docker health check must not queue behind a caption that is already
+        translating. Startup calls ``prepare``, which is what loads the model.
+        """
+        if self._translator is not None:
+            return True, None
+        problem = self._availability_error()
+        if problem:
+            return False, problem
+        return False, "model is not loaded"
+
+    def prepare(self) -> tuple[bool, str | None]:
         try:
             with self._lock:
                 self._load_if_needed()
         except Exception as exc:
             return False, str(exc)
         return True, None
+
+    def _availability_error(self) -> str | None:
+        try:
+            model_dir = self._resolve_model_dir()
+        except ModelNotReady as exc:
+            return str(exc)
+        missing = [name for name in ("model.bin", "source.spm", "target.spm") if not (model_dir / name).is_file()]
+        if missing:
+            return (
+                f"CTranslate2 model at {model_dir} is missing {', '.join(missing)}. "
+                "Convert weights once with: python scripts/download_model.py"
+            )
+        return None
 
     def translate_many(self, texts: list[str]) -> list[str]:
         if not texts:

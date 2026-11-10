@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from app.engine import split_for_translation, translate_texts
-from app.glossary import load_glossary_file
+from app.glossary import SENTINEL_PREFIX, load_glossary_file, placeholder_for
 
 ROOT = Path(__file__).resolve().parents[3]
 GLOSSARY = load_glossary_file(ROOT / "glossary" / "deep-learning.csv")
@@ -32,15 +32,17 @@ def test_mock_path_substitutes_terms_and_keeps_other_words():
         GLOSSARY,
         echo,
     )[0]
-    assert echo.batches[0] == ["⟦G0⟧ uses ⟦G1⟧ to train the ⟦G2⟧."]
+    assert echo.batches[0] == [
+        f"{placeholder_for(0)} uses {placeholder_for(1)} to train the {placeholder_for(2)}."
+    ]
     assert result.translation == "反向传播 uses 梯度下降 to train the 神经网络."
     assert [term.en for term in result.terms] == [
-        "backpropagation",
+        "back-propagation",
         "gradient descent",
         "neural network",
     ]
     assert result.terms[0].matched == "Backpropagation"
-    assert "⟦" not in result.translation
+    assert SENTINEL_PREFIX not in result.translation
 
 
 def test_plain_english_is_unchanged_when_no_term_matches():
@@ -64,7 +66,7 @@ def test_dropped_sentinels_still_insert_chinese():
     result = translate_texts(["Backpropagation updates weights."], GLOSSARY, drop)[0]
     assert "反向传播" in result.translation
     assert "权重" in result.translation
-    assert "⟦" not in result.translation
+    assert SENTINEL_PREFIX not in result.translation
     assert "backprop" not in drop.batches[0][0].casefold()
     assert len(drop.batches) >= 2
     for piece in drop.batches[1]:
@@ -79,17 +81,19 @@ def test_long_text_is_split_without_losing_terms():
     assert len(echo.batches) == 1
     assert len(echo.batches[0]) > 1
     joined = "".join(echo.batches[0])
-    assert "⟦" in joined
+    assert SENTINEL_PREFIX in joined
     assert "backpropagation" not in joined.casefold()
     assert result.translation == text.replace("Backpropagation", "反向传播")
 
 
 def test_split_is_lossless_and_keeps_sentinels():
     body = "word " * 80
-    text = body + "⟦G0⟧" + body
+    sentinel = placeholder_for(0)
+    text = body + sentinel + body
     parts = split_for_translation(text, 48)
     assert "".join(parts) == text
-    assert sum(part.count("⟦G0⟧") for part in parts) == 1
+    assert sum(part.count(sentinel) for part in parts) == 1
     for part in parts:
-        assert ("⟦" in part) == ("⟦G0⟧" in part)
+        if SENTINEL_PREFIX in part:
+            assert sentinel in part
     assert split_for_translation("short text", 48) == ["short text"]

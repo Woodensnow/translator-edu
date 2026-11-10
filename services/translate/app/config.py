@@ -47,7 +47,7 @@ class Settings:
     beam_size: int = 1
     compute_type: str = "int8"
     max_unit_chars: int = 480
-    max_chars: int = 20_000
+    max_chars: int = 2_000
     max_segments: int = 200
     model_name: str = MODEL_NAME
 
@@ -85,7 +85,7 @@ class Settings:
             beam_size=_int_env("TRANSLATE_BEAM_SIZE", 1),
             compute_type=os.environ.get("TRANSLATE_COMPUTE_TYPE", "int8").strip() or "int8",
             max_unit_chars=_int_env("TRANSLATE_MAX_UNIT_CHARS", 480),
-            max_chars=_int_env("TRANSLATE_MAX_CHARS", 20_000),
+            max_chars=_int_env("TRANSLATE_MAX_CHARS", 2_000),
             max_segments=_int_env("TRANSLATE_MAX_SEGMENTS", 200),
             model_name=os.environ.get("TRANSLATE_MODEL_NAME", MODEL_NAME).strip() or MODEL_NAME,
         )

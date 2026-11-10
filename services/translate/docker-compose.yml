@@ -5,8 +5,10 @@
 #
 # Eve: paste the service into deploy/docker-compose.yml and change
 # build.context from "../.." to ".." (deploy/ is one level below the repo
-# root). Change the volume source to
-# ../services/translate/models/opus-mt-en-zh-ct2.
+# root). Change the model volume to
+# ../services/translate/models/opus-mt-en-zh-ct2 and the glossary volume to
+# ../glossary. Keep the 127.0.0.1 bind unless the caption host is another
+# machine; this service has no authentication.
 
 services:
   translate:
@@ -15,7 +17,7 @@ services:
       dockerfile: services/translate/Dockerfile
     image: translator-edu-translate:cpu
     ports:
-      - "8081:8080"
+      - "127.0.0.1:8081:8080"
     environment:
       TRANSLATE_BACKEND: ctranslate2
       TRANSLATE_MODEL_DIR: /models/opus-mt-en-zh-ct2
@@ -25,6 +27,7 @@ services:
       TRANSLATE_BEAM_SIZE: "1"
     volumes:
       - ./models/opus-mt-en-zh-ct2:/models/opus-mt-en-zh-ct2:ro
+      - ../../glossary:/glossary:ro
     restart: unless-stopped
     cpus: "2"
     healthcheck:

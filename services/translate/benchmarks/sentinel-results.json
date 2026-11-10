@@ -1,0 +1,184 @@
+{
+  "ctranslate2": "4.8.5",
+  "intra_threads": 2,
+  "host": "Linux-6.12.113+-x86_64-with-glibc2.39",
+  "chosen_name": "zxq",
+  "chosen_prefix": "ZXQ",
+  "schemes": [
+    {
+      "sentences": 12,
+      "exact": 0.0,
+      "casefold": 0.0,
+      "restored": 0.0,
+      "unk_rate": 0.0,
+      "mean_ms": 32.36,
+      "max_ms": 69.9,
+      "name": "brackets",
+      "example": "⟦G0⟧"
+    },
+    {
+      "sentences": 12,
+      "exact": 0.3333,
+      "casefold": 0.3333,
+      "restored": 0.3333,
+      "unk_rate": 0.0,
+      "mean_ms": 121.87,
+      "max_ms": 940.04,
+      "name": "underscores",
+      "example": "__G0__"
+    },
+    {
+      "sentences": 12,
+      "exact": 0.0,
+      "casefold": 0.0,
+      "restored": 0.0,
+      "unk_rate": 0.0,
+      "mean_ms": 29.37,
+      "max_ms": 42.28,
+      "name": "digits",
+      "example": "910000"
+    },
+    {
+      "sentences": 12,
+      "exact": 0.9167,
+      "casefold": 0.9167,
+      "restored": 1.0,
+      "unk_rate": 0.0,
+      "mean_ms": 39.79,
+      "max_ms": 50.88,
+      "name": "zxq",
+      "example": "ZXQ0"
+    },
+    {
+      "sentences": 12,
+      "exact": 0.0,
+      "casefold": 0.0,
+      "restored": 0.0,
+      "unk_rate": 0.0,
+      "mean_ms": 33.63,
+      "max_ms": 50.84,
+      "name": "zqx",
+      "example": "ZQX0"
+    }
+  ],
+  "baseline": {
+    "mean_ms": 33.0,
+    "max_ms": 45.24
+  },
+  "per_sentence": [
+    {
+      "label": "TERM uses gradient descent.",
+      "baseline_ms": 34.7,
+      "chosen_ms": 33.13,
+      "survived": true
+    },
+    {
+      "label": "A convolutional neural network applies TERM.",
+      "baseline_ms": 38.5,
+      "chosen_ms": 39.4,
+      "survived": true
+    },
+    {
+      "label": "The learning rate changes every TERM.",
+      "baseline_ms": 27.87,
+      "chosen_ms": 50.22,
+      "survived": true
+    },
+    {
+      "label": "TERM is the core of the TERM.",
+      "baseline_ms": 26.1,
+      "chosen_ms": 39.49,
+      "survived": true
+    },
+    {
+      "label": "TERM stabilizes training.",
+      "baseline_ms": 28.61,
+      "chosen_ms": 25.75,
+      "survived": true
+    },
+    {
+      "label": "The TERM updates the weights.",
+      "baseline_ms": 25.99,
+      "chosen_ms": 34.84,
+      "survived": true
+    },
+    {
+      "label": "TERM hurts generalization.",
+      "baseline_ms": 28.67,
+      "chosen_ms": 35.65,
+      "survived": true
+    },
+    {
+      "label": "Use a TERM for this sequence.",
+      "baseline_ms": 29.35,
+      "chosen_ms": 34.02,
+      "survived": true
+    },
+    {
+      "label": "The activation function is TERM.",
+      "baseline_ms": 29.8,
+      "chosen_ms": 36.38,
+      "survived": true
+    },
+    {
+      "label": "Mini-batch gradient descent uses a TERM.",
+      "baseline_ms": 44.47,
+      "chosen_ms": 50.88,
+      "survived": true
+    },
+    {
+      "label": "TERM and TERM are both regularizers.",
+      "baseline_ms": 36.72,
+      "chosen_ms": 48.04,
+      "survived": true
+    },
+    {
+      "label": "This TERM layer follows TERM.",
+      "baseline_ms": 45.24,
+      "chosen_ms": 49.67,
+      "survived": true
+    }
+  ],
+  "failures": [
+    {
+      "scheme": "brackets",
+      "input": "⟦G0⟧ uses gradient descent.",
+      "output": "使用梯度下沉。"
+    },
+    {
+      "scheme": "brackets",
+      "input": "A convolutional neural network applies ⟦G0⟧.",
+      "output": "神经网络在变幻中应用“G0”"
+    },
+    {
+      "scheme": "underscores",
+      "input": "A convolutional neural network applies __G0__.",
+      "output": "进化神经网络应用_G0_______________________。"
+    },
+    {
+      "scheme": "underscores",
+      "input": "__G0__ is the core of the __G1__.",
+      "output": "G0__是G1__的核心。"
+    },
+    {
+      "scheme": "digits",
+      "input": "910000 uses gradient descent.",
+      "output": "91000使用梯度下降法。"
+    },
+    {
+      "scheme": "digits",
+      "input": "A convolutional neural network applies 910000.",
+      "output": "神经网络的变速率是91000"
+    },
+    {
+      "scheme": "zqx",
+      "input": "ZQX0 uses gradient descent.",
+      "output": "X0使用梯度下降。"
+    },
+    {
+      "scheme": "zqx",
+      "input": "A convolutional neural network applies ZQX0.",
+      "output": "神经神经网络的变速应用是X0"
+    }
+  ]
+}

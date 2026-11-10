@@ -1,9 +1,13 @@
 """Course glossary loaded from shared CSV files.
 
-Matching prefers the longest phrase, ignores case, and accepts a simple English
-plural. Hits become sentinels the translator must pass through; the Chinese
-term is written back afterwards. See ``engine`` for the fallback that does not
-depend on the sentinel surviving the model.
+Matching prefers the longest phrase and ignores case. A hyphen in a term also
+matches a space or nothing (``fine-tuning`` / ``fine tuning`` / ``finetuning``),
+and a trailing ``s`` or ``es`` covers plurals (``mini-batch`` / ``mini-batches``).
+
+Hits become sentinels the translator must pass through; the Chinese term is
+written back afterwards. The sentinel shape was chosen by
+``scripts/benchmark_sentinels.py`` so it usually survives opus-mt-en-zh.
+See ``engine`` for the fallback that does not depend on that.
 """
 
 from __future__ import annotations
@@ -17,7 +21,11 @@ from pathlib import Path
 
 logger = logging.getLogger("translate.glossary")
 
-PLACEHOLDER_PATTERN = re.compile(r"⟦G\d+⟧")
+# Uppercase code plus digits. Measured on the int8 CPU model; see
+# benchmarks/sentinel-results.md. Bracket sentinels such as ⟦G0⟧ are not in
+# the SentencePiece vocab and were dropped.
+SENTINEL_PREFIX = "ZXQ"
+PLACEHOLDER_PATTERN = re.compile(rf"(?<![A-Za-z]){re.escape(SENTINEL_PREFIX)}(\d+)", re.IGNORECASE)
 REQUIRED_COLUMNS = ("en", "zh", "note")
 
 
@@ -53,15 +61,26 @@ class Match:
 def placeholder_for(index: int) -> str:
     if index < 0:
         raise ValueError("placeholder index must be non-negative")
-    return f"⟦G{index}⟧"
+    return f"{SENTINEL_PREFIX}{index}"
+
+
+def _alloc_index(used: set[int]) -> int:
+    index = 0
+    while index in used:
+        index += 1
+    used.add(index)
+    return index
 
 
 def term_pattern(term: str) -> re.Pattern[str]:
-    """Whole-phrase match. A final ``s`` or ``es`` covers ordinary plurals."""
-    body = re.escape(term).replace(r"\ ", r"\s+")
-    suffix = r"(?:es)?" if term[-1].casefold() == "s" else r"s?"
+    """Whole-phrase match.
+
+    Hyphens match a hyphen, a space, or nothing. Spaces match whitespace.
+    ``(?:es|s)?`` covers ``batches`` and ``biases`` as well as a final ``s``.
+    """
+    body = re.escape(term).replace(r"\ ", r"\s+").replace(r"\-", r"[\s-]?")
     return re.compile(
-        rf"(?<![A-Za-z0-9]){body}{suffix}(?![A-Za-z0-9])",
+        rf"(?<![A-Za-z0-9]){body}(?:es|s)?(?![A-Za-z0-9])",
         re.IGNORECASE,
     )
 
@@ -90,9 +109,11 @@ def load_glossary_file(path: Path) -> Glossary:
                 continue
             if not en or not zh:
                 raise GlossaryFormatError(f"{path}:{reader.line_num}: en and zh are required")
-            if any(char in en or char in zh for char in "⟦⟧\n\r"):
+            if any(char in en or char in zh for char in "\n\r"):
+                raise GlossaryFormatError(f"{path}:{reader.line_num}: terms cannot contain newlines")
+            if SENTINEL_PREFIX.casefold() in en.casefold() or SENTINEL_PREFIX.casefold() in zh.casefold():
                 raise GlossaryFormatError(
-                    f"{path}:{reader.line_num}: terms cannot contain glossary sentinels"
+                    f"{path}:{reader.line_num}: terms cannot contain the glossary sentinel"
                 )
             key = en.casefold()
             if key in seen:
@@ -135,6 +156,7 @@ class Glossary:
         """Replace glossary hits with sentinels. Spans refer to ``text``."""
         if not text:
             return text, []
+        used = {int(number) for number in PLACEHOLDER_PATTERN.findall(text)}
         candidates: list[tuple[int, int, Term]] = []
         for term, pattern in self._compiled:
             for found in pattern.finditer(text):
@@ -152,13 +174,13 @@ class Glossary:
             Match(
                 start=start,
                 end=end,
-                placeholder=placeholder_for(index),
+                placeholder=placeholder_for(_alloc_index(used)),
                 en=term.en,
                 zh=term.zh,
                 note=term.note,
                 matched=text[start:end],
             )
-            for index, (start, end, term) in enumerate(chosen)
+            for start, end, term in chosen
         ]
         rendered = text
         for match in reversed(matches):
@@ -166,17 +188,30 @@ class Glossary:
         return rendered, matches
 
 
+def _placeholder_regex(placeholder: str) -> re.Pattern[str]:
+    """Match a sentinel, including the Z→兹 transliteration this model emits."""
+    if not placeholder.startswith(SENTINEL_PREFIX):
+        raise ValueError(f"unexpected sentinel {placeholder}")
+    number = placeholder[len(SENTINEL_PREFIX) :]
+    if not number.isdigit():
+        raise ValueError(f"unexpected sentinel {placeholder}")
+    return re.compile(
+        rf"(?<![A-Za-z])(?:{re.escape(SENTINEL_PREFIX)}|兹XQ){number}(?!\d)",
+        re.IGNORECASE,
+    )
+
+
 def restore_placeholders(text: str, matches: list[Match]) -> tuple[str, list[Match]]:
-    """Swap sentinels for Chinese. Returns matches whose sentinel disappeared."""
+    """Swap sentinels for Chinese. Returns matches whose sentinel disappeared.
+
+    Matching is case-insensitive. On this checkpoint a leading ``Z`` is
+    sometimes translated as ``兹`` (``兹XQ0``), and that form counts too.
+    """
     missing: list[Match] = []
     rendered = text
-    for match in matches:
-        if match.placeholder in rendered:
-            rendered = rendered.replace(match.placeholder, match.zh)
-            continue
-        number = match.placeholder.removeprefix("⟦G").removesuffix("⟧")
-        loose = re.compile(rf"⟦\s*G\s*{re.escape(number)}\s*⟧")
-        updated, count = loose.subn(match.zh, rendered)
+    for match in sorted(matches, key=lambda item: len(item.placeholder), reverse=True):
+        pattern = _placeholder_regex(match.placeholder)
+        updated, count = pattern.subn(lambda _match, zh=match.zh: zh, rendered)
         if count:
             rendered = updated
         else:

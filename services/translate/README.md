@@ -4,7 +4,7 @@ English-to-Chinese captions for a live lecture. `POST /translate` takes English 
 
 No shared HTTP contract was in `docs/` when this service was added. This file is the request and response contract until that document exists. Unknown JSON fields are ignored.
 
-The service does not authenticate callers. Keep it on the lecture network.
+There is no authentication. CORS allows any origin so a browser caption page can call the API during development. Do not publish port 8080 on a public address: anyone who can reach it can spend the 2 cores. The compose file binds `127.0.0.1:8081` by default. On the Alibaba hosts, keep the security group closed or put the service on a private interface, and narrow CORS to the caption page before exposing it.
 
 ## API
 
@@ -60,9 +60,9 @@ Timestamps are seconds. When `segments` is non-empty it is the translation unit,
       "translation": "反向传播使用梯度下降。",
       "terms": [
         {
-          "en": "backpropagation",
+          "en": "back-propagation",
           "zh": "反向传播",
-          "note": "",
+          "note": "连字符、空格或连写都匹配",
           "matched": "Backpropagation"
         },
         {
@@ -81,7 +81,7 @@ The Chinese sentence above is the shape of a model response, not a captured fixt
 
 | status | when |
 | --- | --- |
-| 422 | missing text and segments, bad language, bad timestamps, or over 20,000 characters / 200 segments |
+| 422 | missing text and segments, bad language, bad timestamps, or over 2,000 characters / 200 segments |
 | 404 | unknown `glossary` id. `detail.glossaries` lists the files on disk |
 | 503 | weights are not converted yet, or the glossary directory cannot be read |
 
@@ -95,7 +95,7 @@ curl -s http://127.0.0.1:8080/translate \
 
 Terms come from `glossary/*.csv` (`en,zh,note`). See `glossary/README.md` for how to add a row or a course. The default id is `deep-learning`.
 
-Hits are replaced with sentinels, the sentence is translated, and each sentinel is swapped for its Chinese term. If a sentinel does not survive the model, the sentence is translated in pieces around the locked terms so the Chinese is still inserted. The model is not the only thing enforcing terminology.
+Hits are replaced with sentinels, the sentence is translated, and each sentinel is swapped for its Chinese term. The code uses `ZXQ0`, `ZXQ1`, … because that was the only shape that stayed in the int8 output (see below). A hyphen in a glossary row also matches a space or the closed form (`fine-tuning` / `fine tuning`), and a trailing `s` or `es` matches plurals (`mini-batches`). If a sentinel does not survive the model, the sentence is translated in pieces around the locked terms so the Chinese is still inserted.
 
 ## Model
 
@@ -106,6 +106,12 @@ That pair fits one 2-core machine: published CTranslate2 int8 numbers for Opus-M
 Larger checkpoints (NLLB-600M, `opus-mt-tc-big-en-zho`, mBART) are a poor fit for this CPU budget. float16 is not the default because these servers have no GPU. The runtime never selects CUDA.
 
 This dedicated en-zh checkpoint does not take a target-language token. Do not prefix text with `>>zho<<`.
+
+## Sentinel benchmark
+
+`scripts/benchmark_sentinels.py` translates twelve caption lines with five placeholder schemes on the int8 model (`intra_threads=2`, beam 1). It is not part of CI. The measured copy is `benchmarks/sentinel-results.md`.
+
+On this CPU (not the Alibaba host, but with the same thread cap), plain sentences took about 28–45 ms. `⟦G0⟧` survived **0/12** sentences: the brackets are not copied, and the line falls through to the fragment fallback. Digit codes were rewritten (`910000` became `91000`). `ZQX0` was also dropped. `__G0__` survived 4/12 and one of those lines took about 940 ms, which is too slow for live captions. `ZXQ0` survived exactly in **11/12** sentences (mean about 40 ms, max about 51 ms). The miss was `This ZXQ0 layer follows ZXQ1`, where the model transliterated the first `Z` as `兹` (`兹XQ0`). The restorer accepts that form, so all 12 lines keep the glossary term without a second translation.
 
 ## Download and convert weights
 
@@ -153,7 +159,7 @@ TRANSLATE_MODEL_DIR=models/opus-mt-en-zh-ct2 \
   uvicorn app.main:app --host 0.0.0.0 --port 8080 --workers 1
 ```
 
-The model directory must be readable by the process. `/health` stays 503 until `model.bin`, `source.spm`, and `target.spm` are present.
+The model directory must be readable by the process. Startup loads the weights. `/health` does not take the translation lock, so a caption in progress cannot make the health check time out. It stays 503 until `model.bin`, `source.spm`, and `target.spm` have been loaded.
 
 | variable | default | purpose |
 | --- | --- | --- |
@@ -166,7 +172,7 @@ The model directory must be readable by the process. `/health` stays 503 until `
 | `TRANSLATE_BEAM_SIZE` | `1` | raise for slightly slower, slightly better captions |
 | `TRANSLATE_COMPUTE_TYPE` | from `runtime.json`, else `int8` | must match the conversion |
 | `TRANSLATE_MAX_UNIT_CHARS` | `480` | sentence split for long text |
-| `TRANSLATE_MAX_CHARS` | `20000` | request limit |
+| `TRANSLATE_MAX_CHARS` | `2000` | request limit, sized for a caption rather than a whole lecture |
 | `TRANSLATE_MAX_SEGMENTS` | `200` | request limit |
 
 ## Docker
@@ -178,7 +184,7 @@ docker build -f services/translate/Dockerfile -t translator-edu-translate:cpu .
 docker compose -f services/translate/docker-compose.yml up --build
 ```
 
-The compose file publishes host port **8081** and container port **8080**. Paste that service into `deploy/docker-compose.yml` when Eve's deploy file exists; the comment at the top of the compose file has the two path edits. From another container the base URL is `http://translate:8080`.
+The compose file binds **127.0.0.1:8081** to container port 8080 and mounts `glossary/` read-only at `/glossary`, so an edit to the CSV on the host is picked up without rebuilding the image. The container cannot write the CSV. Paste that service into `deploy/docker-compose.yml` when Eve's deploy file exists; the comment at the top of the compose file has the path edits. From another container on the same Docker network the base URL is `http://translate:8080`. Reaching it from a browser on another machine means dropping the `127.0.0.1` bind, which is the public-CPU risk above.
 
 ## Tests
 

@@ -5,10 +5,14 @@ from pathlib import Path
 import pytest
 
 from app.glossary import (
+    SENTINEL_PREFIX,
     GlossaryFormatError,
     GlossaryNotFound,
     GlossaryStore,
+    Match,
     load_glossary_file,
+    placeholder_for,
+    restore_placeholders,
 )
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -16,7 +20,7 @@ CSV_PATH = ROOT / "glossary" / "deep-learning.csv"
 GLOSSARY = load_glossary_file(CSV_PATH)
 
 REQUIRED = {
-    "backpropagation": "反向传播",
+    "back-propagation": "反向传播",
     "gradient descent": "梯度下降",
     "activation function": "激活函数",
     "loss function": "损失函数",
@@ -93,10 +97,25 @@ def test_case_plural_and_word_boundaries():
     assert [match.en for match in spaced] == ["batch normalization"]
 
 
-def test_backprop_spellings_share_one_rendering():
-    for spelling in ("backpropagation", "back propagation", "back-propagation", "backprop"):
-        _protected, matches = GLOSSARY.protect(spelling)
-        assert [(match.en, match.zh) for match in matches] == [(spelling, "反向传播")]
+@pytest.mark.parametrize(
+    "spelling",
+    ["backpropagation", "back propagation", "back-propagation", "BackPropagations"],
+)
+def test_hyphen_space_and_closed_spellings(spelling: str):
+    _protected, matches = GLOSSARY.protect(spelling)
+    assert [(match.en, match.zh) for match in matches] == [("back-propagation", "反向传播")]
+
+
+def test_plural_es_and_spaced_hyphen_terms():
+    assert [match.en for match in GLOSSARY.protect("mini-batches")[1]] == ["mini-batch"]
+    assert [match.en for match in GLOSSARY.protect("mini batches")[1]] == ["mini-batch"]
+    assert [match.en for match in GLOSSARY.protect("fine tuning")[1]] == ["fine-tuning"]
+    assert [match.en for match in GLOSSARY.protect("fine-tunings")[1]] == ["fine-tuning"]
+    assert [match.en for match in GLOSSARY.protect("multi head attention")[1]] == ["multi-head attention"]
+    assert [match.en for match in GLOSSARY.protect("cross entropy")[1]] == ["cross-entropy"]
+    assert [match.en for match in GLOSSARY.protect("pretraining")[1]] == ["pre-training"]
+    assert [match.en for match in GLOSSARY.protect("backprop")[1]] == ["backprop"]
+    assert [match.en for match in GLOSSARY.protect("loss functions")[1]] == ["loss function"]
 
 
 def test_loader_rejects_bad_rows(tmp_path: Path):
@@ -111,7 +130,7 @@ def test_loader_rejects_bad_rows(tmp_path: Path):
         load_glossary_file(duplicate)
 
     sentinel = tmp_path / "sentinel.csv"
-    sentinel.write_text("en,zh,note\nfoo⟦0⟧,甲,\n", encoding="utf-8")
+    sentinel.write_text(f"en,zh,note\nfoo{placeholder_for(0)},甲,\n", encoding="utf-8")
     with pytest.raises(GlossaryFormatError, match="sentinel"):
         load_glossary_file(sentinel)
 
@@ -146,6 +165,24 @@ def test_store_reloads_and_keeps_last_good_file(tmp_path: Path):
     with pytest.raises(GlossaryNotFound) as exc:
         store.get("missing")
     assert exc.value.available == ["demo"]
+
+
+def test_existing_sentinel_index_is_not_reused():
+    sentinel = placeholder_for(0)
+    protected, matches = GLOSSARY.protect(f"{sentinel} uses dropout.")
+    assert matches[0].en == "dropout"
+    assert matches[0].placeholder != sentinel
+    assert sentinel in protected
+
+
+def test_restore_accepts_marian_z_transliteration():
+    first = Match(0, 4, placeholder_for(0), "dropout", "暂退法", "", "dropout")
+    second = Match(5, 9, placeholder_for(1), "pooling", "汇聚", "", "pooling")
+    restored, missing = restore_placeholders("兹XQ0层依ZXQ1而变化。", [first, second])
+    assert missing == []
+    assert restored == "暂退法层依汇聚而变化。"
+    assert SENTINEL_PREFIX not in restored
+    assert "兹XQ" not in restored
 
 
 def test_first_load_of_a_broken_directory_fails(tmp_path: Path):
