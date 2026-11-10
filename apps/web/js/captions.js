@@ -116,6 +116,63 @@ export function replaceWithBatch(state, segments) {
   return { segments: next, partial: null, lagging: false, generation: state.generation + 1 };
 }
 
+export function showJobSegments(state, segments) {
+  const next = [];
+  for (const segment of segments || []) {
+    const text = clean(segment.text);
+    if (!text) continue;
+    const translation = clean(segment.translation);
+    const fallback = Boolean(segment.fallback);
+    next.push({
+      id: segment.id ? String(segment.id) : `seg-${next.length + 1}`,
+      start: segment.start ?? 0,
+      end: segment.end ?? 0,
+      text,
+      translation: translation || (fallback ? text : ""),
+      pending: !translation && !fallback,
+      error: "",
+      fallback,
+      terms: Array.isArray(segment.terms) ? segment.terms : [],
+    });
+  }
+  return { ...state, segments: next, partial: null };
+}
+
+export function progressLine(processedSeconds, totalSeconds) {
+  const done = Math.max(0, Math.floor(Number(processedSeconds) / 60));
+  const total = Math.max(done, Math.ceil(Number(totalSeconds) / 60));
+  return `已处理 ${done}/${total} 分钟`;
+}
+
+export function tooLongMessage(maxSeconds) {
+  return `录音太长，请分段上传（上限 ${maxSeconds} 秒）`;
+}
+
+export function toBilingualTxt(segments) {
+  return (segments || [])
+    .map((segment) => `${formatTimestamp(segment.start)}\n${segment.text}\n${segment.translation || ""}`)
+    .join("\n\n");
+}
+
+export function toBilingualSrt(segments) {
+  return (segments || [])
+    .map((segment, index) => {
+      const start = srtTime(segment.start || 0);
+      const end = srtTime(segment.end || segment.start || 0);
+      return `${index + 1}\n${start} --> ${end}\n${segment.text}\n${segment.translation || ""}`;
+    })
+    .join("\n\n");
+}
+
+function srtTime(seconds) {
+  const ms = Math.max(0, Math.round(Number(seconds) * 1000));
+  const hours = Math.floor(ms / 3600000);
+  const minutes = Math.floor((ms % 3600000) / 60000);
+  const secs = Math.floor((ms % 60000) / 1000);
+  const milli = ms % 1000;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")},${String(milli).padStart(3, "0")}`;
+}
+
 function clean(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }

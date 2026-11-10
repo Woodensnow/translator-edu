@@ -1,6 +1,6 @@
 # Architecture
 
-translator-edu puts English lecture audio on one 2-vCPU host and Chinese captions on another. Neither host has a GPU. A few seconds of delay is expected.
+translator-edu runs on one 2-vCPU host in mainland China. There is no GPU. v1 is an uploaded recording over plain HTTP. Live mic is still in the page, and it is not the default path.
 
 ```
 lecturer's browser

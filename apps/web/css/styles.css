@@ -91,9 +91,21 @@ button, .upload {
   cursor: pointer;
 }
 
-#live-btn { background: #e7f2ea; color: #10241a; }
-#stop-btn { background: transparent; color: #f4f0e6; border-color: #6d7a72; }
-.upload { position: relative; background: #24312b; color: #f4f0e6; border: 1px solid #3e5148; }
+.upload { background: #e7f2ea; color: #10241a; border-color: transparent; }
+.secondary, #stop-btn { background: transparent; color: #f4f0e6; border-color: #6d7a72; }
+a[hidden] { display: none; }
+#download-txt, #download-srt {
+  color: #f2d48a;
+  align-self: center;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+}
+.progress {
+  margin: 0.8rem 0 0;
+  font-family: var(--mono);
+  color: #f2d48a;
+}
+.upload { position: relative; }
 .upload input {
   position: absolute;
   width: 1px;

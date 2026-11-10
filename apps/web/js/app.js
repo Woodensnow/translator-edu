@@ -6,7 +6,11 @@ import {
   createCaptionState,
   formatTimestamp,
   liveCaptureAvailable,
-  replaceWithBatch,
+  progressLine,
+  showJobSegments,
+  toBilingualSrt,
+  toBilingualTxt,
+  tooLongMessage,
 } from "./captions.js";
 import { TranslateUnavailable, packTranslateBatches, translateSegments } from "./translate-client.js";
 
@@ -18,6 +22,9 @@ const els = {
   file: document.querySelector("#file"),
   banner: document.querySelector("#banner"),
   captions: document.querySelector("#captions"),
+  progress: document.querySelector("#progress"),
+  downloadTxt: document.querySelector("#download-txt"),
+  downloadSrt: document.querySelector("#download-srt"),
 };
 
 let state = createCaptionState();
@@ -34,7 +41,11 @@ init();
 
 async function init() {
   try {
-    const response = await fetch("/config.json", { cache: "no-store" });
+    const response = await fetch("/config.json", { cache: "no-store", credentials: "same-origin" });
+    if (response.status === 401) {
+      window.location.href = "/login";
+      return;
+    }
     if (response.ok) config = await response.json();
   } catch {
     setStatus("Could not load page config", "warn");
@@ -278,26 +289,75 @@ function handleAsrEvent(event) {
 }
 
 async function uploadBlob(blob, filename) {
-  setStatus("Transcribing recording…", "idle");
+  setStatus("排队中…", "idle");
   hideBanner();
+  hideDownloads();
   const form = new FormData();
   form.append("file", blob, filename || "lecture.webm");
-  const response = await fetch(config.transcribePath || "/transcribe", { method: "POST", body: form });
-  if (!response.ok) {
-    let detail = `Transcription failed (${response.status})`;
-    try {
-      const body = await response.json();
-      if (typeof body.detail === "string") detail = body.detail;
-    } catch {
-      /* keep the status text */
-    }
-    throw new Error(detail);
+  const response = await fetch("/jobs", { method: "POST", body: form, credentials: "same-origin" });
+  if (response.status === 401) {
+    window.location.href = "/login";
+    return;
   }
-  const body = await response.json();
-  state = replaceWithBatch(state, body.segments || []);
-  render();
-  await translateIds(state.segments.map((segment) => segment.id));
-  setStatus("Recording transcribed", "idle");
+  if (!response.ok) {
+    throw new Error(`Upload failed (${response.status})`);
+  }
+  const created = await response.json();
+  await pollJob(created.id);
+}
+
+async function pollJob(id) {
+  for (;;) {
+    const response = await fetch(`/jobs/${id}`, { credentials: "same-origin" });
+    if (response.status === 401) {
+      window.location.href = "/login";
+      return;
+    }
+    const job = await response.json();
+    if (job.code === "audio_too_long" || String(job.error || "").includes("录音太长")) {
+      showBanner(tooLongMessage(job.max_seconds || config.maxAudioSeconds || 7200));
+      setStatus("录音太长", "warn");
+      return;
+    }
+    state = showJobSegments(state, job.segments || []);
+    render();
+    if (els.progress && job.total_seconds) {
+      els.progress.hidden = false;
+      els.progress.textContent = progressLine(job.processed_seconds || 0, job.total_seconds);
+    }
+    if (job.status === "queued") setStatus(`排队中（前面还有 ${job.position} 个）`, "idle");
+    if (job.status === "running") setStatus("正在转写…", "live");
+    if (job.status === "done") {
+      setStatus("Recording transcribed", "idle");
+      showDownloads(state.segments);
+      return;
+    }
+    if (job.status === "error") {
+      setStatus(job.error || "处理失败", "warn");
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+}
+
+function showDownloads(segments) {
+  if (!els.downloadTxt || !els.downloadSrt) return;
+  els.downloadTxt.href = blobUrl(toBilingualTxt(segments));
+  els.downloadTxt.download = "captions.txt";
+  els.downloadSrt.href = blobUrl(toBilingualSrt(segments));
+  els.downloadSrt.download = "captions.srt";
+  els.downloadTxt.hidden = false;
+  els.downloadSrt.hidden = false;
+}
+
+function hideDownloads() {
+  if (!els.downloadTxt || !els.downloadSrt) return;
+  els.downloadTxt.hidden = true;
+  els.downloadSrt.hidden = true;
+}
+
+function blobUrl(text) {
+  return URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
 }
 
 async function translateIds(ids) {
@@ -317,6 +377,10 @@ async function translateIds(ids) {
     } catch (err) {
       if (state.generation !== generation) return;
       state = applyTranslateFallback(state, batchIds);
+      if (err.status === 401) {
+        window.location.href = "/login";
+        return;
+      }
       if (err instanceof TranslateUnavailable) {
         showBanner("Chinese captions are unavailable. English is shown in both columns.");
       } else {

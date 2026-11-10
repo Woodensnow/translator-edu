@@ -87,6 +87,7 @@ class LiveSession:
         silence_rms: float = 0.008,
         min_final_s: float = 0.3,
         clock: Clock | None = None,
+        id_prefix: str = "",
     ) -> None:
         if input_sample_rate <= 0:
             raise ValueError("input_sample_rate must be positive.")
@@ -106,6 +107,7 @@ class LiveSession:
         self._rate_remainder = np.zeros(0, dtype=np.float32)
         self._last_rate = self.input_sample_rate
         self._seq = 0
+        self.id_prefix = str(id_prefix or "")
 
     def add_pcm16(self, data: bytes) -> list[TranscriptEvent]:
         samples = pcm16_to_float(data)
@@ -237,7 +239,10 @@ class LiveSession:
 
     def _next_id(self) -> str:
         self._seq += 1
-        return f"seg-{self._seq}"
+        stem = f"seg-{self._seq}"
+        if self.id_prefix:
+            return f"{self.id_prefix}-{stem}"
+        return stem
 
 
 def _rms(samples: np.ndarray) -> float:

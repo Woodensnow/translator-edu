@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>口令 · translator-edu</title>
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+  <div class="app">
+    <p class="eyebrow">translator-edu</p>
+    <h1>输入口令</h1>
+    <p>这台服务器在公网 IP 上提供页面。口令只问一次，之后由浏览器自动带上。</p>
+    <!-- message -->
+    <form method="post" action="/login" class="login">
+      <label>
+        口令
+        <input name="token" type="password" autocomplete="current-password" required>
+      </label>
+      <button type="submit">进入</button>
+    </form>
+  </div>
+</body>
+</html>

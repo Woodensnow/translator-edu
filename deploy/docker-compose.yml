@@ -1,16 +1,16 @@
-# Classroom stack for two 2-vCPU Alibaba Cloud ECS instances, no GPU.
+# One 2-vCPU Alibaba Cloud ECS instance in mainland China. No GPU.
+# Web, ASR, and translate all run here together.
 #
-# Only the captions page is published. ASR and translate have no auth.
-# Translate also sends Access-Control-Allow-Origin: *. They stay on the
-# compose network. A debug curl from the ECS host can use the loopback
-# publishes below. Do not change those to 0.0.0.0.
+#   cp deploy/.env.example deploy/.env
+#   # edit deploy/.env — set WEB_ACCESS_TOKEN (`openssl rand -hex 32`)
+#   docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
 #
-#   docker compose up -d --build
+# Compose loads deploy/.env because that is the directory of the first -f file.
+# --env-file makes the path explicit. Do not put the token in the repo root .env.
 #
-# Transcription host only:  docker compose up -d --build asr web
-# Translation host only:    TRANSLATE_PUBLISH=<private-ip>:8080 docker compose up -d --build translate
-# Then set the web host's TRANSLATE_URL to http://<private-ip>:8080.
-# The security group opens the web port only. See docs/deploy.md.
+# Only the captions page is published. ASR and translate have no auth of their
+# own and stay on the compose network. Loopback publishes are for a debug curl
+# on the ECS host. Do not change them to 0.0.0.0.
 
 name: translator-edu
 
@@ -23,10 +23,13 @@ services:
       ASR_MODEL: ${ASR_MODEL:-base.en}
       ASR_COMPUTE_TYPE: ${ASR_COMPUTE_TYPE:-int8}
       ASR_CPU_THREADS: ${ASR_CPU_THREADS:-2}
+      OMP_NUM_THREADS: ${ASR_OMP_NUM_THREADS:-2}
       ASR_MODEL_DIR: /models
       ASR_GLOSSARY_PATH: /glossary/deep-learning.csv
       ASR_WINDOW_SECONDS: ${ASR_WINDOW_SECONDS:-4}
+      ASR_BATCH_WINDOW_SECONDS: ${ASR_BATCH_WINDOW_SECONDS:-45}
       ASR_PARTIAL_SECONDS: ${ASR_PARTIAL_SECONDS:-0}
+      ASR_MAX_AUDIO_SECONDS: ${ASR_MAX_AUDIO_SECONDS:-7200}
       ASR_CORS_ORIGINS: ${ASR_CORS_ORIGINS:-*}
       ASR_PORT: "8001"
     volumes:
@@ -34,7 +37,8 @@ services:
       - ../glossary:/glossary:ro
     ports:
       - "${ASR_PUBLISH:-127.0.0.1:8001}:8001"
-    cpus: "2"
+    cpus: "1.5"
+    mem_limit: 768m
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health')"]
       interval: 30s
@@ -52,15 +56,17 @@ services:
       TRANSLATE_BACKEND: ${TRANSLATE_BACKEND:-ctranslate2}
       TRANSLATE_MODEL_DIR: /models/opus-mt-en-zh-ct2
       TRANSLATE_GLOSSARY_DIR: /glossary
-      TRANSLATE_INTRA_THREADS: "2"
-      TRANSLATE_INTER_THREADS: "1"
-      TRANSLATE_BEAM_SIZE: "1"
+      TRANSLATE_INTRA_THREADS: ${TRANSLATE_INTRA_THREADS:-1}
+      TRANSLATE_INTER_THREADS: ${TRANSLATE_INTER_THREADS:-1}
+      TRANSLATE_BEAM_SIZE: ${TRANSLATE_BEAM_SIZE:-1}
+      OMP_NUM_THREADS: ${TRANSLATE_OMP_NUM_THREADS:-1}
     volumes:
       - ../services/translate/models/opus-mt-en-zh-ct2:/models/opus-mt-en-zh-ct2:ro
       - ../glossary:/glossary:ro
     ports:
       - "${TRANSLATE_PUBLISH:-127.0.0.1:8081}:8080"
-    cpus: "2"
+    cpus: "0.4"
+    mem_limit: 640m
     healthcheck:
       test:
         [
@@ -81,13 +87,18 @@ services:
     image: translator-edu-web:cpu
     environment:
       WEB_PORT: "8080"
+      WEB_REQUIRE_AUTH: "1"
+      WEB_ACCESS_TOKEN: ${WEB_ACCESS_TOKEN:?Set WEB_ACCESS_TOKEN in deploy/.env (openssl rand -hex 32)}
       ASR_WS_URL: ${ASR_WS_URL:-ws://asr:8001/ws/transcribe}
       ASR_HTTP_URL: ${ASR_HTTP_URL:-http://asr:8001}
       TRANSLATE_URL: ${TRANSLATE_URL:-http://translate:8080}
       COURSE_ID: ${COURSE_ID:-deep-learning}
       COURSE_TITLE: ${COURSE_TITLE:-Deep Learning}
+      ASR_MAX_AUDIO_SECONDS: ${ASR_MAX_AUDIO_SECONDS:-7200}
     ports:
       - "${WEB_PUBLISH:-0.0.0.0:8080}:8080"
+    cpus: "0.1"
+    mem_limit: 128m
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
       interval: 30s

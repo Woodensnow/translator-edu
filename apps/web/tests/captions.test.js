@@ -8,7 +8,10 @@ import {
   createCaptionState,
   formatTimestamp,
   liveCaptureAvailable,
+  progressLine,
   replaceWithBatch,
+  toBilingualSrt,
+  tooLongMessage,
 } from "../js/captions.js";
 
 test("keeps ASR ids and timestamps, then renders the translate segment", () => {
@@ -73,4 +76,7 @@ test("503 fallback shows the English line and a later batch does not reuse it", 
   assert.equal(state.segments[0].translation, "");
   assert.equal(liveCaptureAvailable(true), true);
   assert.equal(liveCaptureAvailable(false), false);
+  assert.equal(progressLine(12 * 60, 90 * 60), "已处理 12/90 分钟");
+  assert.equal(tooLongMessage(7200), "录音太长，请分段上传（上限 7200 秒）");
+  assert.match(toBilingualSrt([{ start: 0, end: 1.5, text: "Hello", translation: "你好" }]), /00:00:00,000 --> 00:00:01,500/);
 });

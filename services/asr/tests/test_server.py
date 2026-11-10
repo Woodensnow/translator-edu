@@ -65,7 +65,8 @@ def test_batch_passes_english_terms_and_not_notes():
     assert response.status_code == 200
     body = response.json()
     assert body["language"] == "en"
-    assert body["segments"][0]["id"] == "seg-1"
+    assert body["segments"][0]["id"].endswith("-seg-1")
+    assert body["segments"][0]["id"] != "seg-1"
     assert body["segments"][0]["text"] == engine.text
     assert body["text"] == engine.text
     call = engine.calls[0]
@@ -119,7 +120,8 @@ def test_websocket_streams_a_final_segment():
     assert kinds[-1] == "done"
     segment = next(message for message in messages if message["type"] == "segment")
     assert segment["final"] is True
-    assert segment["id"] == "seg-1"
+    assert segment["id"].endswith("-seg-1")
+    assert segment["id"].startswith("s")
     assert segment["text"] == engine.text
     assert engine.calls[0]["vad"] is False
 
@@ -164,12 +166,77 @@ def test_bad_glossary_refuses_to_start(tmp_path):
         create_app(settings=Settings.from_env({"ASR_GLOSSARY_PATH": str(bad)}), engine=FakeEngine())
 
 
+def test_two_live_sessions_do_not_reuse_segment_ids():
+    app = create_app(settings=_settings(), engine=FakeEngine())
+    ids = []
+    with TestClient(app) as client:
+        for _ in range(2):
+            with client.websocket_connect("/ws/transcribe") as socket:
+                socket.send_json({"type": "start", "sample_rate": 16000})
+                socket.receive_json()
+                from support import sine_pcm16
+
+                socket.send_bytes(sine_pcm16(1.0))
+                socket.send_json({"type": "stop"})
+                messages = _messages(socket)
+            ids.append(next(message["id"] for message in messages if message["type"] == "segment"))
+    assert ids[0] != ids[1]
+    assert ids[0].endswith("-seg-1") and ids[1].endswith("-seg-1")
+
+
+def test_batch_windows_keep_offsets_and_release_the_model_between_them():
+    from asr.audio import wav_bytes_from_pcm16
+    from support import sine_pcm16
+
+    engine = FakeEngine()
+    app = create_app(settings=_settings(batch_window_s=1, max_audio_seconds=30), engine=engine)
+    wav = wav_bytes_from_pcm16(sine_pcm16(2.0))
+    with TestClient(app) as client:
+        created = client.post(
+            "/uploads",
+            content=wav,
+            headers={"content-type": "application/octet-stream", "x-filename": "two.wav"},
+        )
+        assert created.status_code == 200
+        upload_id = created.json()["id"]
+        first = client.post(f"/uploads/{upload_id}/next")
+        second = client.post(f"/uploads/{upload_id}/next")
+        done = client.post(f"/uploads/{upload_id}/next")
+        client.delete(f"/uploads/{upload_id}")
+    assert first.json()["segments"][0]["start"] < 1
+    assert second.json()["segments"][0]["start"] >= 1
+    assert done.json()["done"] is True
+    assert len(engine.calls) == 2
+
+
+def test_overlong_recording_is_rejected_and_does_not_stick_the_lock(tmp_path):
+    from asr.audio import wav_bytes_from_pcm16
+    from support import sine_pcm16
+
+    engine = FakeEngine()
+    app = create_app(settings=_settings(max_audio_seconds=1), engine=engine)
+    long_wav = wav_bytes_from_pcm16(sine_pcm16(2.0))
+    short_wav = wav_bytes_from_pcm16(sine_pcm16(0.4))
+    with TestClient(app) as client:
+        rejected = client.post("/transcribe", files={"file": ("long.wav", long_wav, "audio/wav")})
+        assert rejected.status_code == 413
+        detail = rejected.json()["detail"]
+        assert detail["code"] == "audio_too_long"
+        assert detail["message"] == "录音太长，请分段上传"
+        assert detail["max_seconds"] == 1
+        accepted = client.post("/transcribe", files={"file": ("short.wav", short_wav, "audio/wav")})
+    assert accepted.status_code == 200
+    assert engine.calls
+    assert accepted.json()["segments"][0]["id"].endswith("-seg-1")
+
+
 def test_settings_defaults_and_validation():
     settings = Settings.from_env({})
     assert settings.model == "base.en"
     assert settings.compute_type == "int8"
     assert settings.cpu_threads == 2
     assert settings.glossary_path.as_posix() == "glossary/deep-learning.csv"
+    assert settings.max_audio_seconds == 7200
     assert settings.cors_origins == ("*",)
     custom = Settings.from_env(
         {

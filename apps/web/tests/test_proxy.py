@@ -75,13 +75,17 @@ def _post(port, body):
         return exc.code, json.loads(exc.read().decode())
 
 
-def test_config_defaults_to_the_private_translate_url(monkeypatch):
-    monkeypatch.delenv("TRANSLATE_URL", raising=False)
+def test_config_hides_internal_urls(monkeypatch):
     monkeypatch.delenv("COURSE_ID", raising=False)
+    monkeypatch.setenv("TRANSLATE_URL", "http://translate:8080")
+    monkeypatch.setenv("ASR_HTTP_URL", "http://asr:8001")
     body = config()
-    assert body["translateUrl"] == "http://translate:8080"
     assert body["course"] == "deep-learning"
     assert body["translatePath"] == "/translate"
+    assert body["maxAudioSeconds"] == 7200
+    blob = json.dumps(body)
+    assert "translate:8080" not in blob
+    assert "asr:8001" not in blob
     assert translate_upstream() == "http://translate:8080/translate"
 
 

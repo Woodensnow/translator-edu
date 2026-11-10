@@ -26,15 +26,20 @@ process. Switching courses means pointing the variable at
 from __future__ import annotations
 
 import asyncio
+import itertools
 import json
 import logging
+import math
+import os
+import tempfile
+import threading
 from typing import Any
 
-from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from asr.audio import TARGET_SR, AudioFormatError, decode_audio_bytes
+from asr.audio import TARGET_SR, AudioFormatError, AudioTooLong, iter_pcm_windows, media_duration_seconds
 from asr.engine import WhisperEngine
 from asr.glossary import GlossaryPrompt
 from asr.settings import Settings
@@ -73,6 +78,8 @@ def create_app(settings: Settings | None = None, engine: Any | None = None) -> F
         len(glossary.terms),
     )
     model = engine if engine is not None else WhisperEngine(resolved)
+    serial = itertools.count(1)
+    uploads: dict[str, _UploadCursor] = {}
 
     app = FastAPI(title="translator-edu ASR", version="1.0.0")
     app.add_middleware(
@@ -110,45 +117,74 @@ def create_app(settings: Settings | None = None, engine: Any | None = None) -> F
 
     @app.post("/transcribe", response_model=TranscriptOut)
     async def transcribe(file: UploadFile = File(...)) -> TranscriptOut:
-        data = await file.read(resolved.max_upload_bytes + 1)
-        if len(data) > resolved.max_upload_bytes:
-            raise HTTPException(status_code=413, detail="Recording is larger than the upload limit.")
-        if not data:
-            raise HTTPException(status_code=400, detail="The upload was empty.")
-
-        def run() -> list:
-            try:
-                samples, sample_rate = decode_audio_bytes(data, file.filename or "")
-            except AudioFormatError:
-                raise
-            if samples.size == 0:
-                raise AudioFormatError("The audio file had no samples.")
-            return model.transcribe(
-                samples,
-                sample_rate,
-                glossary.prompt_for(""),
-                glossary.current_hotwords(),
-                vad=resolved.batch_vad,
-            )
-
+        path = await _save_upload(file, resolved.max_upload_bytes, file.filename or "")
+        prefix = f"b{next(serial)}"
         try:
-            segments = await asyncio.to_thread(run)
+            segments = await asyncio.to_thread(_transcribe_file, path, resolved, model, glossary, prefix)
+        except AudioTooLong as exc:
+            raise _too_long(exc) from exc
         except AudioFormatError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:
             logger.exception("Batch transcription failed")
             raise HTTPException(status_code=500, detail="Transcription failed.") from exc
+        finally:
+            _unlink(path)
+        return TranscriptOut(
+            language="en",
+            text=" ".join(item.text for item in segments),
+            segments=segments,
+        )
 
-        payload = [
-            SegmentOut(
-                id=f"seg-{index + 1}",
-                start=round(segment.start, 3),
-                end=round(segment.end, 3),
-                text=segment.text,
-            )
-            for index, segment in enumerate(segments)
-        ]
-        return TranscriptOut(language="en", text=" ".join(item.text for item in payload), segments=payload)
+    @app.post("/uploads")
+    async def create_upload(request: Request) -> dict:
+        """Store one recording on disk and return its duration. No PCM is kept."""
+
+        filename = request.headers.get("x-filename") or "lecture.bin"
+        path = await _save_chunks(
+            request.stream(),
+            resolved.max_upload_bytes,
+            filename,
+            request.headers.get("content-length"),
+        )
+        try:
+            duration = media_duration_seconds(path)
+            if duration is not None and duration > resolved.max_audio_seconds + 1e-3:
+                raise AudioTooLong(resolved.max_audio_seconds)
+            cursor = _UploadCursor(path, resolved, model, glossary, f"b{next(serial)}", duration)
+        except AudioTooLong as exc:
+            _unlink(path)
+            raise _too_long(exc) from exc
+        except Exception:
+            _unlink(path)
+            raise
+        uploads[cursor.upload_id] = cursor
+        windows = None
+        if duration is not None:
+            windows = max(1, int(math.ceil((duration - 1e-6) / resolved.batch_window_s)))
+        return {
+            "id": cursor.upload_id,
+            "duration": duration,
+            "window_seconds": resolved.batch_window_s,
+            "windows": windows,
+            "max_seconds": int(resolved.max_audio_seconds),
+        }
+
+    @app.post("/uploads/{upload_id}/next")
+    async def next_window(upload_id: str) -> dict:
+        cursor = uploads.get(upload_id)
+        if cursor is None:
+            raise HTTPException(status_code=404, detail="Upload was not found.")
+        try:
+            return await asyncio.to_thread(cursor.pull)
+        except AudioTooLong as exc:
+            _discard_upload(uploads, upload_id)
+            raise _too_long(exc) from exc
+
+    @app.delete("/uploads/{upload_id}")
+    async def delete_upload(upload_id: str) -> dict:
+        _discard_upload(uploads, upload_id)
+        return {"ok": True}
 
     @app.websocket("/ws/transcribe")
     async def ws_transcribe(socket: WebSocket) -> None:
@@ -167,6 +203,7 @@ def create_app(settings: Settings | None = None, engine: Any | None = None) -> F
                         resolved,
                         model,
                         glossary,
+                        serial,
                     )
                 elif message.get("bytes") is not None:
                     if session is None:
@@ -196,6 +233,7 @@ async def _handle_text(
     settings: Settings,
     engine: Any,
     glossary: GlossaryPrompt,
+    serial,
 ) -> LiveSession | None:
     try:
         payload = json.loads(raw)
@@ -224,6 +262,7 @@ async def _handle_text(
             window_s=settings.window_s,
             partial_s=settings.partial_s,
             silence_rms=settings.silence_rms,
+            id_prefix=f"s{next(serial)}",
         )
         glossary.refresh()
         await socket.send_json(
@@ -255,6 +294,157 @@ async def _handle_text(
 
     await socket.send_json({"type": "error", "message": f"Unknown message type {kind!r}."})
     return session
+
+
+class _UploadCursor:
+    """Decodes one window at a time. The engine lock is not held between windows."""
+
+    def __init__(self, path: str, settings: Settings, model, glossary, prefix: str, duration: float | None) -> None:
+        self.path = path
+        self.settings = settings
+        self.model = model
+        self.glossary = glossary
+        self.prefix = prefix
+        self.duration = duration
+        self.upload_id = prefix
+        self.iterator = iter_pcm_windows(
+            path,
+            window_s=settings.batch_window_s,
+            max_seconds=settings.max_audio_seconds,
+        )
+        self.done = False
+        self.processed = 0.0
+        self.produced = 0
+        self.lock = threading.Lock()
+
+    def pull(self) -> dict:
+        with self.lock:
+            if self.done:
+                return self._payload(done=True, segments=[])
+            try:
+                samples, offset, duration = next(self.iterator)
+            except StopIteration:
+                self.done = True
+                return self._payload(done=True, segments=[])
+            rows = _window_segments(
+                samples, offset, self.model, self.glossary, self.settings, self.prefix, self.produced
+            )
+            self.produced += len(rows)
+            self.processed = offset + duration
+            return self._payload(done=False, segments=[row.model_dump() for row in rows])
+
+    def _payload(self, done: bool, segments: list) -> dict:
+        return {
+            "done": done,
+            "segments": segments,
+            "processed_seconds": round(self.processed, 3),
+            "total_seconds": None if self.duration is None else round(self.duration, 3),
+        }
+
+
+def _discard_upload(uploads: dict, upload_id: str) -> None:
+    cursor = uploads.pop(upload_id, None)
+    if cursor is not None:
+        _unlink(cursor.path)
+
+
+def _too_long(exc: AudioTooLong) -> HTTPException:
+    return HTTPException(
+        status_code=413,
+        detail={
+            "code": "audio_too_long",
+            "message": "录音太长，请分段上传",
+            "max_seconds": int(exc.max_seconds),
+        },
+    )
+
+
+def _unlink(path: str) -> None:
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
+
+async def _save_upload(file: UploadFile, limit: int, filename: str) -> str:
+    async def chunks():
+        while True:
+            block = await file.read(1024 * 1024)
+            if not block:
+                break
+            yield block
+
+    return await _save_chunks(chunks(), limit, filename, None)
+
+
+async def _save_chunks(chunks, limit: int, filename: str, declared: str | None) -> str:
+    """Stream bytes to disk. Reject a negative or non-integer Content-Length."""
+
+    if declared is not None and str(declared).strip() != "":
+        try:
+            announced = int(str(declared).strip())
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Content-Length is invalid.") from exc
+        if announced < 0:
+            raise HTTPException(status_code=400, detail="Content-Length is invalid.")
+        if announced > limit:
+            raise HTTPException(status_code=413, detail="Recording is larger than the upload limit.")
+    suffix = os.path.splitext(filename)[1].lower() or ".bin"
+    handle = tempfile.NamedTemporaryFile(prefix="asr-upload-", suffix=suffix, delete=False)
+    path = handle.name
+    total = 0
+    try:
+        async for chunk in chunks:
+            total += len(chunk)
+            if total > limit:
+                raise HTTPException(status_code=413, detail="Recording is larger than the upload limit.")
+            handle.write(chunk)
+    except Exception:
+        handle.close()
+        _unlink(path)
+        raise
+    handle.close()
+    if total == 0:
+        _unlink(path)
+        raise HTTPException(status_code=400, detail="The upload was empty.")
+    return path
+
+
+def _transcribe_file(path: str, settings: Settings, model, glossary, prefix: str) -> list[SegmentOut]:
+    segments: list[SegmentOut] = []
+    try:
+        for samples, offset, _duration in iter_pcm_windows(
+            path,
+            window_s=settings.batch_window_s,
+            max_seconds=settings.max_audio_seconds,
+        ):
+            segments.extend(_window_segments(samples, offset, model, glossary, settings, prefix, len(segments)))
+    except AudioTooLong:
+        segments.clear()
+        raise
+    return segments
+
+
+def _window_segments(samples, offset: float, model, glossary, settings: Settings, prefix: str, already: int) -> list[SegmentOut]:
+    # The engine lock is taken and released inside transcribe, one window at a time.
+    parts = model.transcribe(
+        samples,
+        TARGET_SR,
+        glossary.prompt_for(""),
+        glossary.current_hotwords(),
+        vad=settings.batch_vad,
+    )
+    rows: list[SegmentOut] = []
+    for index, part in enumerate(parts):
+        rows.append(
+            SegmentOut(
+                id=f"{prefix}-seg-{already + index + 1}",
+                start=round(offset + part.start, 3),
+                end=round(offset + part.end, 3),
+                text=part.text,
+            )
+        )
+    return rows
 
 
 def _configure_logging() -> None:

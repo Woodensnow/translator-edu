@@ -26,14 +26,17 @@ The process listens on `ASR_PORT` (8001). Compose publishes that only on `127.0.
 
 | Variable | Default | Role |
 | --- | --- | --- |
-| `ASR_MODEL` | `base.en` | faster-whisper name |
+| `ASR_MODEL` | `base.en` | faster-whisper name. Use `tiny.en` if memory is tight. Live mic, when it becomes the default later, should use `tiny.en`. |
 | `ASR_COMPUTE_TYPE` | `int8` | CTranslate2 compute type |
 | `ASR_CPU_THREADS` | `2` | Must match the vCPU count. Unset, the library uses 4 threads. |
 | `ASR_MODEL_DIR` | Hugging Face cache | Weight directory |
 | `ASR_GLOSSARY_PATH` | `glossary/deep-learning.csv` | Course CSV with header `en,zh,note` or `英文,中文,备注`. See [glossary.md](glossary.md). |
 | `ASR_WINDOW_SECONDS` | `4` | Live window. Latency is about this plus the model time. |
 | `ASR_PARTIAL_SECONDS` | `0` | Set to `2` only when the real-time factor has spare room. |
-| `ASR_MAX_UPLOAD_MB` | `100` | Batch upload limit |
+| `ASR_MAX_UPLOAD_MB` | `100` | Byte cap while the body is streamed to disk. |
+| `ASR_MAX_AUDIO_SECONDS` | `7200` | Reject longer recordings. The page says 录音太长，请分段上传. |
+| `ASR_BATCH_WINDOW_SECONDS` | `45` | Decode and transcribe this much at a time. |
+| `ASR_CPU_THREADS` | `2` | Threads inside one window. Translate uses 1 and runs between windows. |
 | `ASR_CORS_ORIGINS` | `*` | Unused by the browser when the page proxies. Leave the port unpublished. |
 
 ## Browser protocol

@@ -34,6 +34,8 @@ class Settings:
     hotword_max_chars: int = 400
     cors_origins: tuple[str, ...] = ("*",)
     max_upload_bytes: int = 100 * 1024 * 1024
+    max_audio_seconds: float = 7200.0
+    batch_window_s: float = 45.0
     batch_vad: bool = True
     host: str = "0.0.0.0"
     port: int = 8001
@@ -51,6 +53,10 @@ class Settings:
             raise ValueError("ASR_PROMPT_MAX_CHARS must be >= 32.")
         if self.max_upload_bytes < 1:
             raise ValueError("ASR_MAX_UPLOAD_MB must be >= 1.")
+        if self.max_audio_seconds < 1:
+            raise ValueError("ASR_MAX_AUDIO_SECONDS must be >= 1.")
+        if not 1 <= self.batch_window_s <= 120:
+            raise ValueError("ASR_BATCH_WINDOW_SECONDS must be between 1 and 120.")
         if not 1 <= self.port <= 65535:
             raise ValueError("ASR_PORT must be a TCP port.")
 
@@ -73,6 +79,8 @@ class Settings:
             hotword_max_chars=_int(source, "ASR_HOTWORD_MAX_CHARS", 400),
             cors_origins=origins,
             max_upload_bytes=_int(source, "ASR_MAX_UPLOAD_MB", 100) * 1024 * 1024,
+            max_audio_seconds=_float(source, "ASR_MAX_AUDIO_SECONDS", 7200.0),
+            batch_window_s=_float(source, "ASR_BATCH_WINDOW_SECONDS", 45.0),
             batch_vad=_bool(source, "ASR_BATCH_VAD", True),
             host=str(source.get("ASR_HOST", "0.0.0.0")).strip() or "0.0.0.0",
             port=_int(source, "ASR_PORT", 8001),

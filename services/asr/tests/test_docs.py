@@ -41,6 +41,11 @@ def test_deploy_keeps_asr_and_translate_off_the_public_internet():
     assert compose.count("../glossary:/glossary:ro") >= 2
     assert "TRANSLATE_GLOSSARY_DIR: /glossary" in compose
     assert "http://translate:8080" in compose
+    assert "TRANSLATE_INTRA_THREADS:-1" in compose.replace("}", "")
+    assert "WEB_ACCESS_TOKEN:?" in compose.replace("}", "") or "WEB_ACCESS_TOKEN:" in compose
+    assert "one 2-vCPU" in docs or "One Alibaba" in docs
+    assert "swapfile" in docs
+    assert "mainland" in docs.lower() or "Mainland" in docs
 
 
 def test_ci_requirements_do_not_install_whisper():
