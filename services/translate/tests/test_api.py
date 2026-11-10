@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.main import create_app
+from app.translator import CTranslate2Translator
 
 ROOT = Path(__file__).resolve().parents[3]
 GLOSSARY = ROOT / "glossary"
@@ -53,11 +54,11 @@ def test_translate_text_and_timestamped_segments(client: TestClient):
     assert body["segments"][0]["id"] == "s0"
     assert body["segments"][0]["start"] is None
     assert [term["en"] for term in body["segments"][0]["terms"]] == [
-        "backpropagation",
+        "back-propagation",
         "gradient descent",
         "neural network",
     ]
-    assert "⟦" not in text.text
+    assert "ZXQ" not in text.text
 
     segments = client.post(
         "/translate",
@@ -129,13 +130,46 @@ def test_cpu_backend_reports_not_ready_without_weights(tmp_path: Path):
         assert "download_model.py" in translated.text
 
 
+def test_blank_text_is_accepted(client: TestClient):
+    response = client.post("/translate", json={"text": "   "})
+    assert response.status_code == 200
+    assert response.json()["translation"] == "   "
+    empty = client.post("/translate", json={"text": ""})
+    assert empty.status_code == 200
+    assert empty.json()["translation"] == ""
+
+
+def test_default_caption_limit_is_about_two_thousand_characters():
+    assert Settings(backend="mock").max_chars == 2000
+
+
+def test_health_does_not_take_the_inference_lock(tmp_path: Path):
+    translator = CTranslate2Translator(
+        Settings(backend="ctranslate2", glossary_dir=GLOSSARY, model_dir=tmp_path / "missing-model")
+    )
+    assert translator._lock.acquire(blocking=False)
+    try:
+        ready, detail = translator.health()
+        translator._translator = object()
+        loaded, loaded_detail = translator.health()
+    finally:
+        translator._lock.release()
+    assert ready is False
+    assert detail is not None
+    assert "download_model.py" in detail
+    assert loaded is True
+    assert loaded_detail is None
+
+
 def test_settings_from_env(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("TRANSLATE_MAX_CHARS", raising=False)
     monkeypatch.setenv("TRANSLATE_BACKEND", "mock")
     monkeypatch.setenv("TRANSLATE_INTRA_THREADS", "2")
     monkeypatch.setenv("TRANSLATE_GLOSSARY_DIR", str(GLOSSARY))
     settings = Settings.from_env()
     assert settings.backend == "mock"
     assert settings.intra_threads == 2
+    assert settings.max_chars == 2000
     assert settings.glossary_dir == GLOSSARY
 
     monkeypatch.setenv("TRANSLATE_BACKEND", "gpu")
