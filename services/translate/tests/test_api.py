@@ -28,7 +28,7 @@ def test_health_and_glossary_endpoints(client: TestClient):
     assert listed.json()["columns"] == ["en", "zh", "note"]
     course = next(item for item in listed.json()["glossaries"] if item["name"] == "deep-learning")
     assert course["file"] == "deep-learning.csv"
-    assert 60 <= course["terms"] <= 100
+    assert 60 <= course["terms"] <= 200
 
     detail = client.get("/glossary/deep-learning")
     assert detail.status_code == 200

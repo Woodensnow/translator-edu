@@ -18,7 +18,7 @@ en,zh,note
 
 Extra columns are ignored. `en` and `zh` are required on every row. Matching prefers the longest phrase. A hyphen in the English term also matches a space or nothing (`fine-tuning`, `fine tuning`, `finetuning`). Ordinary terms accept a trailing `s` or `es` (`weights`, `mini-batches`, `biases`). All-caps acronyms match only as written, plus a lowercase plural `s` (`AI`, `AIs`, `CNNs`), so `ais` is not treated as AI. A title-case name such as `Adam` has no plural, so `Adams` is left alone. Spaced and closed spellings of a hyphenated term do not need their own rows.
 
-The starter course is Deep Learning and Neural Networks: `glossary/deep-learning.csv`. Wording follows 《动手学深度学习》 where that book has a settled translation, including 暂退法, 批量规范化, 汇聚, and 迭代周期. A few names stay in Latin (`Transformer`, `Softmax`, `ReLU`, `Adam`).
+The starter course is Deep Learning and Neural Networks: `glossary/deep-learning.csv`. Wording follows 《动手学深度学习》 where that book has a settled translation, including 暂退法, 批量规范化, 汇聚, and 迭代周期. A few names stay in Latin (`Transformer`, `Softmax`, `ReLU`, `Adam`, and model or optimizer names such as `BERT`, `GPT`, `RMSProp`).
 
 The ASR service reads this file as the Whisper prompt and truncates it by character count (`ASR_HOTWORD_MAX_CHARS` / `ASR_PROMPT_MAX_CHARS`). That limit can be raised at deploy time. Put the most important terms first: the ones most likely to be spoken and most likely to be misheard, such as multi-word technical phrases, acronyms, and names (`convolutional neural network`, `CNN`, `LSTM`, `ReLU`, `Adam`, `back-propagation`), ahead of common words Whisper already spells (`weight`, `gradient`, `parameter`). Every row is still a translation term.
 

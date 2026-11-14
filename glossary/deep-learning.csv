@@ -94,3 +94,53 @@ underfitting,欠拟合,
 validation set,验证集,
 weight,权重,
 weight decay,权重衰减,
+linear regression,线性回归,
+logistic regression,逻辑回归,
+softmax regression,Softmax 回归,
+objective function,目标函数,
+cost function,代价函数,
+backward pass,反向传播,同 back-propagation
+batch gradient descent,批量梯度下降,
+learning rate decay,学习率衰减,
+local minimum,局部最小值,
+local minima,局部最小值,minimum 的复数
+saddle point,鞍点,
+weight initialization,权重初始化,
+Xavier initialization,Xavier 初始化,
+Leaky ReLU,Leaky ReLU,
+RMSProp,RMSProp,优化器名，保留英文
+AdaGrad,AdaGrad,优化器名，保留英文
+one-hot encoding,独热编码,
+vectorization,矢量化,
+broadcasting,广播机制,
+data augmentation,数据增广,也称数据增强
+padding,填充,卷积填充
+stride,步幅,
+transposed convolution,转置卷积,
+global average pooling,全局平均汇聚,也称全局平均池化
+skip connection,跳跃连接,
+ResNet,残差网络,
+autoencoder,自编码器,
+generative adversarial network,生成对抗网络,
+GAN,生成对抗网络,英文缩写
+word embedding,词嵌入,
+token,词元,也称 token
+tokenization,词元化,也称分词
+sequence-to-sequence,序列到序列,
+seq2seq,序列到序列,口头缩写
+beam search,束搜索,
+teacher forcing,强制教学,
+BERT,BERT,模型名，保留英文
+GPT,GPT,模型名，保留英文
+large language model,大语言模型,
+LLM,大语言模型,英文缩写
+unsupervised learning,无监督学习,
+self-supervised learning,自监督学习,
+reinforcement learning,强化学习,
+image classification,图像分类,
+object detection,目标检测,
+semantic segmentation,语义分割,
+confusion matrix,混淆矩阵,
+computer vision,计算机视觉,
+natural language processing,自然语言处理,
+NLP,自然语言处理,英文缩写
