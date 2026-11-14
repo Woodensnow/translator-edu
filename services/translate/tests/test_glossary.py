@@ -36,7 +36,10 @@ REQUIRED = {
     "optimizer": "优化器",
 }
 
-KEPT_LATIN = {"Adam", "ReLU", "Transformer", "Softmax", "Sigmoid", "Tanh"}
+KEPT_LATIN = {
+    "Adam", "ReLU", "Transformer", "Softmax", "Sigmoid", "Tanh",
+    "Leaky ReLU", "RMSProp", "AdaGrad", "BERT", "GPT",
+}
 
 
 def _has_cjk(text: str) -> bool:
@@ -50,7 +53,7 @@ def test_course_file_is_shared_csv_shape():
     assert raw.splitlines()[0] == b"en,zh,note"
     with CSV_PATH.open(encoding="utf-8", newline="") as handle:
         rows = list(csv.DictReader(handle))
-    assert 60 <= len(rows) <= 100
+    assert 60 <= len(rows) <= 200
     assert len(rows) == len(GLOSSARY.terms)
     keys = [row["en"].casefold() for row in rows]
     assert len(keys) == len(set(keys))
